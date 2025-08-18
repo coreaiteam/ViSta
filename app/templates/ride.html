@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book a Ride</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/css/ride.css?v=20">
+</head>
+<body>
+    <!-- Background decoration -->
+    <div class="bg-decoration">
+        <div class="circle circle-1"></div>
+        <div class="circle circle-2"></div>
+    </div>
+    
+    <!-- Notification -->
+    <div class="notification" id="notification">
+        <i class="fas fa-check-circle"></i>
+        <div class="notification-content">
+            <div class="notification-title">Ride Requested</div>
+            <div class="notification-message">Your driver is on the way!</div>
+        </div>
+    </div>
+    
+    <div class="app-container floating">
+        <!-- Map Section -->
+        <section class="map-section">
+            <div id="map"></div>
+            
+            <!-- Map controls -->
+            <div class="map-overlay">
+                <h1><span>ViSta</span></h1>
+                <div class="map-controls">
+                    <button class="control-btn" id="locate-btn">
+                        <i class="fas fa-location-arrow"></i>
+                    </button>
+                    <button class="control-btn" id="clear-btn">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- NEW: Random Data Controls -->
+            <div class="random-data-controls">
+                <button class="control-btn random-control-btn" id="toggle-random-data-btn" title="Toggle Random Location Data">
+                    <i class="fas fa-eye-slash"></i>
+                </button>
+            </div>
+
+            <!-- NEW: Map Legend -->
+            <div id="map-legend" class="legend">
+                <h4><i class="fas fa-map-marker-alt"></i> Map Legend</h4>
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: #4CAF50;"></span>
+                    <span>Your Origin</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: #F44336;"></span>
+                    <span>Your Destination</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: #2196F3;"></span>
+                    <span>Random Origins</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: #FF9800;"></span>
+                    <span>Random Destinations</span>
+                </div>
+            </div>
+        </section>
+        
+        
+        <!-- Sidebar - Fixed scrolling -->
+        <section class="sidebar">
+            <div class="sidebar-content">
+                
+                <div class="content-section">
+                    <!-- Location Inputs -->
+                    <div class="location-inputs">
+                        <div class="input-group">
+                            <div class="input-icon">
+                                <i class="fas fa-circle"></i>
+                            </div>
+                            <input type="text" class="location-input" id="origin-input" placeholder="Choose origin location">
+                            <div class="suggestions-container" id="origin-suggestions"></div>
+                        </div>
+                        
+                        <div class="input-group">
+                            <div class="input-icon">
+                                <i class="fas fa-flag"></i>
+                            </div>
+                            <input type="text" class="location-input" id="destination-input" placeholder="Choose destination location">
+                            <div class="suggestions-container" id="destination-suggestions"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ride Details (Initially hidden) -->
+                    <div class="ride-details" id="ride-details">
+                        <h3 class="section-title">
+                            <i class="fas fa-receipt"></i> Ride Summary
+                        </h3>
+                        
+                        <div class="detail-row">
+                            <span class="detail-label">
+                                <i class="fas fa-route"></i> Distance
+                            </span>
+                            <span class="detail-value" id="distance-value">5.2 km</span>
+                        </div>
+                        
+                        <div class="detail-row">
+                            <span class="detail-label">
+                                <i class="fas fa-clock"></i> Estimated Time
+                            </span>
+                            <span class="detail-value" id="time-value">15 min</span>
+                        </div>
+                        
+                        <div class="detail-row">
+                            <span class="detail-label">
+                                <i class="fas fa-car"></i> Vehicle Type
+                            </span>
+                            <span class="detail-value" id="vehicle-type">Standard</span>
+                        </div>
+                        
+                        <div class="detail-row">
+                            <span class="detail-label">
+                                <i class="fas fa-tag"></i> Price
+                            </span>
+                            <span class="detail-value price-value" id="price-value">$12.50</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" id="group-btn">
+                            <i class="fas fa-car"></i> Find Companions
+                        </button>
+                        
+                        <button class="btn btn-danger" id="cancel-btn" style="display: none;">
+                            <i class="fas fa-times"></i> Cancel Ride
+                        </button>
+                    </div>
+                    
+                    <!-- Ride Status (Initially hidden) -->
+                    <div class="ride-status" id="ride-status">
+                        <div class="status-header">
+                            <div class="driver-avatar">
+                                JD
+                            </div>
+                            <div class="driver-info">
+                                <div class="driver-name">John Driver</div>
+                                <div class="car-info">Toyota Camry • ABC-123</div>
+                                <div class="rating">
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star"></i>
+                                    <i class="fas fa-star-half-alt"></i>
+                                    4.7
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-container">
+                            <div class="progress-bar" id="progress-bar"></div>
+                        </div>
+                        
+                        <div class="status-message">
+                            <i class="fas fa-car"></i> 
+                            Your driver is on the way to your location
+                        </div>
+                        
+                        <div class="detail-row">
+                            <span class="detail-label">Estimated Arrival</span>
+                            <span class="detail-value" id="arrival-time">8:15 PM</span>
+                        </div>
+                        
+                        <div class="detail-row">
+                            <span class="detail-label">Your Location</span>
+                            <span class="detail-value" id="current-location">Central Station</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const userData = {{ user.model_dump_json() | safe }};
+    </script>
+    <script src="/static/js/ride.js?v=33"></script>
+</body>
+</html>
