@@ -7,7 +7,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import time
 from .connection_manager import connection_manager
-from .clustering_engine import ClusteringEngine
+from .hls_engine import ClusteringEngine
 from .models import UserLocation, ClusterGroup
 
 from app.database import SessionLocal

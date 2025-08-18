@@ -210,5 +210,5 @@ __marimo__/
 
 # Custom
 rideshare.db
-spatial_cache.pkl
 cache/
+*.pkl
