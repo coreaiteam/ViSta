@@ -2,17 +2,16 @@
 import asyncio
 import logging
 import threading
-from typing import List, Dict, Optional, Tuple, Callable
+from typing import List, Dict, Optional, Callable
 from datetime import datetime
-import osmnx as ox
 from concurrent.futures import ThreadPoolExecutor
 import time
-import time
-from .connection_manager import connection_manager 
-from .clustering_engin import UserLocation, ClusterGroup, ClusteringEnging
+from .connection_manager import connection_manager
+from .clustering_engine import ClusteringEngine
+from .models import UserLocation, ClusterGroup
 
 from app.database import SessionLocal
-from app.database.models import *
+from app.database.models import Location
 
 
 # Configure logging
@@ -27,18 +26,20 @@ class ClusteringService:
         self.clustering_interval = clustering_interval
         self.max_wait_time = max_wait_time
         # i need this class
-        self.clusterer = ClusteringEnging()
-        
+        self.clusterer = ClusteringEngine()
+
         # Thread-safe data structures
         self._lock = threading.RLock()
         self.active_groups: Dict[str, ClusterGroup] = {}
         self.user_to_group: Dict[int, str] = {}
-        
+
         # Threading
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="clustering")
-        
+        self._executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="clustering"
+        )
+
         # Observers
         self._observers: List[Callable] = []
 
@@ -55,10 +56,10 @@ class ClusteringService:
 
     def _notify_observers(self, event_type: str, data: dict):
         """Notify all observers of changes"""
-        print(data['users'])
+        print(data["users"])
         with self._lock:
             observers = self._observers.copy()
-        
+
         for callback in observers:
             try:
                 # Schedule the callback to run in the executor
@@ -68,7 +69,7 @@ class ClusteringService:
 
     def _get_recent_locations(self) -> List[UserLocation]:
         """Get all location requests from database"""
-        
+
         db = SessionLocal()
         try:
             locations = db.query(Location).all()
@@ -80,7 +81,7 @@ class ClusteringService:
                     origin_lng=loc.origin_lng,
                     destination_lat=loc.destination_lat,
                     destination_lng=loc.destination_lng,
-                    stored_at=loc.stored_at
+                    stored_at=loc.stored_at,
                 )
                 for loc in locations
             ]
@@ -90,97 +91,108 @@ class ClusteringService:
     def _clustering_worker(self):
         """Main clustering worker that runs in background thread"""
         logger.info("Clustering worker started")
-        
+
         while not self._stop_event.is_set():
             # try:
-                # Get recent locations
-                recent_locations = self._get_recent_locations()
+            # Get recent locations
+            recent_locations = self._get_recent_locations()
 
-                # Filter out users who are already in complete groups
+            # Filter out users who are already in complete groups
+            with self._lock:
+                available_users = [
+                    user
+                    for user in recent_locations
+                    if user.user_id not in self.user_to_group
+                    or not self.active_groups.get(
+                        self.user_to_group[user.user_id],
+                        ClusterGroup("", [], datetime.now()),
+                    ).is_complete()
+                ]
+
+            if len(available_users) >= 3:
+                # Perform clustering
+                start_time = time.time()
+                new_groups = self.clusterer.cluster_users(recent_locations)
+                end_time = time.time()
+                print(f"Time taken: {end_time - start_time:.4f} seconds")
+
+                # Process new groups
                 with self._lock:
-                    available_users = [
-                        user for user in recent_locations
-                        if user.user_id not in self.user_to_group or
-                        not self.active_groups.get(self.user_to_group[user.user_id], ClusterGroup("", [], datetime.now())).is_complete()
-                    ]
-
-                if len(available_users) >= 3:
-                    # Perform clustering
-                    start_time = time.time()
-                    new_groups = self.clusterer.cluster_users(recent_locations)
-                    end_time = time.time()
-                    print(f"Time taken: {end_time - start_time:.4f} seconds")
-
-                    # Process new groups
-                    with self._lock:
-                        for group in new_groups:
-                            self.active_groups[group.group_id] = group
-                            
-                            # Update user mappings
-                            for user in group.users:
-                                self.user_to_group[user.user_id] = group.group_id
-
-                    # Notify observers (outside of lock)
                     for group in new_groups:
-                        self._notify_observers('group_formed', {
-                            'group_id': group.group_id,
-                            'users': group.get_user_ids(),
-                            'group_data': group.to_dict()
-                        })
+                        self.active_groups[group.group_id] = group
 
-                        self._notify_group_via_websocket(group)
+                        # Update user mappings
+                        for user in group.users:
+                            self.user_to_group[user.user_id] = group.group_id
+
+                # Notify observers (outside of lock)
+                for group in new_groups:
+                    self._notify_observers(
+                        "group_formed",
+                        {
+                            "group_id": group.group_id,
+                            "users": group.get_user_ids(),
+                            "group_data": group.to_dict(),
+                        },
+                    )
+
+                    self._notify_group_via_websocket(group)
 
             # except Exception as e:
             #     logger.error(f"Error in clustering worker: {e}")
 
             # Wait for next iteration or stop signal
-                self._stop_event.wait(self.clustering_interval)
+            self._stop_event.wait(self.clustering_interval)
 
         logger.info("Clustering worker stopped")
 
     def _notify_group_via_websocket(self, group: ClusterGroup):
         """Send WebSocket notifications to all users in a group"""
-        
+
         for user in group.users:
             # Get companions for this user (excluding themselves)
             companions = [u for u in group.users if u.user_id != user.user_id]
-            
+
             message = {
-                'type': 'group_formed',
-                'group_id': group.group_id,
-                'companions': [
+                "type": "group_formed",
+                "group_id": group.group_id,
+                "companions": [
                     {
-                        'user_id': comp.user_id,
-                        'origin_lat': comp.origin_lat,
-                        'origin_lng': comp.origin_lng,
-                        'destination_lat': comp.destination_lat,
-                        'destination_lng': comp.destination_lng,
-                        'stored_at': comp.stored_at.isoformat()
+                        "user_id": comp.user_id,
+                        "origin_lat": comp.origin_lat,
+                        "origin_lng": comp.origin_lng,
+                        "destination_lat": comp.destination_lat,
+                        "destination_lng": comp.destination_lng,
+                        "stored_at": comp.stored_at.isoformat(),
                     }
                     for comp in companions
                 ],
-                'meeting_point_origin': group.meeting_point_origin,
-                'meeting_point_destination': group.meeting_point_destination,
-                'created_at': group.created_at.isoformat()
+                "meeting_point_origin": group.meeting_point_origin,
+                "meeting_point_destination": group.meeting_point_destination,
+                "created_at": group.created_at.isoformat(),
             }
-            
+
             # Schedule WebSocket notification
-            self._executor.submit(self._send_websocket_message, user.user_id, message)
+            self._executor.submit(
+                self._send_websocket_message, user.user_id, message)
 
     def _send_websocket_message(self, user_id: int, message: dict):
         """Helper method to send WebSocket message"""
-        try:            
+        try:
             # Create new event loop for this thread if needed
             try:
                 loop = asyncio.get_event_loop()
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-            
+
             # Send the message
-            loop.run_until_complete(connection_manager.send_group_update(user_id, message))
+            loop.run_until_complete(
+                connection_manager.send_group_update(user_id, message)
+            )
         except Exception as e:
-            logger.error(f"Error sending WebSocket message to user {user_id}: {e}")
+            logger.error(
+                f"Error sending WebSocket message to user {user_id}: {e}")
 
     def start(self):
         """Start the clustering service"""
@@ -189,7 +201,8 @@ class ClusteringService:
             return
 
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._clustering_worker, daemon=True)
+        self._thread = threading.Thread(
+            target=self._clustering_worker, daemon=True)
         self._thread.start()
         logger.info("Clustering service started")
 
@@ -200,26 +213,26 @@ class ClusteringService:
 
         logger.info("Stopping clustering service...")
         self._stop_event.set()
-        
+
         if self._thread.is_alive():
             self._thread.join(timeout=10)
-        
+
         self._executor.shutdown(wait=False)
         logger.info("Clustering service stopped")
 
-    # Public API methods for FastAPI endpoints    
+    # Public API methods for FastAPI endpoints
     def get_user_group(self, user_id: int) -> Optional[Dict]:
         """Get group information for a specific user"""
         with self._lock:
             if user_id not in self.user_to_group:
                 return None
-                
+
             group_id = self.user_to_group[user_id]
             group = self.active_groups.get(group_id)
-            
+
             if not group:
                 return None
-                
+
             return group.to_dict()
 
     def get_user_companions(self, user_id: int) -> Optional[Dict]:
@@ -236,11 +249,11 @@ class ClusteringService:
 
             companions = [u for u in group.users if u.user_id != user_id]
             return {
-                'group_id': group_id,
-                'companions': [comp.to_dict() for comp in companions],
-                'meeting_point_origin': group.meeting_point_origin,
-                'meeting_point_destination': group.meeting_point_destination,
-                'created_at': group.created_at.isoformat()
+                "group_id": group_id,
+                "companions": [comp.to_dict() for comp in companions],
+                "meeting_point_origin": group.meeting_point_origin,
+                "meeting_point_destination": group.meeting_point_destination,
+                "created_at": group.created_at.isoformat(),
             }
 
     def get_user_meeting_points(self, user_id: int) -> Optional[Dict]:
@@ -256,10 +269,10 @@ class ClusteringService:
                 return None
 
             return {
-                'group_id': group_id,
-                'meeting_point_origin': group.meeting_point_origin,
-                'meeting_point_destination': group.meeting_point_destination,
-                'status': group.status
+                "group_id": group_id,
+                "meeting_point_origin": group.meeting_point_origin,
+                "meeting_point_destination": group.meeting_point_destination,
+                "status": group.status,
             }
 
     def get_all_active_groups(self) -> List[Dict]:
@@ -271,12 +284,14 @@ class ClusteringService:
         """Get current service status"""
         with self._lock:
             return {
-                'is_running': self._thread is not None and self._thread.is_alive(),
-                'active_groups': len(self.active_groups),
-                'complete_groups': len([g for g in self.active_groups.values() if g.is_complete()]),
-                'users_in_groups': len(self.user_to_group),
-                'clustering_interval': self.clustering_interval,
-                'max_wait_time': self.max_wait_time
+                "is_running": self._thread is not None and self._thread.is_alive(),
+                "active_groups": len(self.active_groups),
+                "complete_groups": len(
+                    [g for g in self.active_groups.values() if g.is_complete()]
+                ),
+                "users_in_groups": len(self.user_to_group),
+                "clustering_interval": self.clustering_interval,
+                "max_wait_time": self.max_wait_time,
             }
 
     def remove_user_from_group(self, user_id: int) -> bool:
@@ -287,7 +302,7 @@ class ClusteringService:
 
             group_id = self.user_to_group[user_id]
             group = self.active_groups.get(group_id)
-            
+
             if not group:
                 return False
 
@@ -298,14 +313,15 @@ class ClusteringService:
             # If group becomes empty, remove it
             if not group.users:
                 del self.active_groups[group_id]
-                self._notify_observers('group_disbanded', {'group_id': group_id})
+                self._notify_observers("group_disbanded", {
+                                       "group_id": group_id})
             else:
                 # Update group status
                 group.status = "forming" if not group.is_complete() else "complete"
-                self._notify_observers('group_updated', {
-                    'group_id': group_id,
-                    'group_data': group.to_dict()
-                })
+                self._notify_observers(
+                    "group_updated",
+                    {"group_id": group_id, "group_data": group.to_dict()},
+                )
 
             return True
 
