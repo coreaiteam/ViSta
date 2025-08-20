@@ -109,6 +109,8 @@ class User:
     group: InternalClusterGroup  # Group the user belongs to, if any
     buckets: List[int]  # LSH buckets for clustering
     signature: List[int]  # MinHash signature for the user
+    orig_node: int  # nearest node to origin location
+    dest_node: int  # nearest node to destination location
 
     @property
     def origin_coords(self) -> Tuple[float, float]:
@@ -148,7 +150,7 @@ class User:
 class ClusteringEngine:
     """A class to cluster users based on their origin and destination locations."""
     def __init__(self, place: str = "Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran", 
-                 k_nearest: int = 100, similarity_threshold: float = 0.7,
+                 k_nearest: int = 100, similarity_threshold: float = 0.5,
                  cache_file: str = "signatures.pkl"):
         """
         Initialize the clustering engine with geographical and clustering parameters.
@@ -166,7 +168,7 @@ class ClusteringEngine:
         self.G = None  # Street network graph
         self.nodes_list = None  # List of graph nodes
         self.node_to_idx = None  # Mapping of nodes to indices
-        self.nearest_nodes_cache = {}  # Cache for precomputed nearest nodes
+        self.nearest_nodes_cache:Dict[int, Dict[int, float]] = {}  # Cache for precomputed nearest nodes
         self.signature_cache = {}  # Cache for precomputed signatures
         self.ball_tree = None  # BallTree for nearest neighbor search
         self.node_coords = None  # Coordinates of graph nodes
@@ -284,12 +286,9 @@ class ClusteringEngine:
                 sorted_distances = sorted(distances.items(), key=lambda x: x[1])[:200]
 
                 # Store nearest nodes
-                nearest_nodes = [(target_node, dist)
-                                 for target_node, dist in sorted_distances]
+                nearest_nodes = {target_node: dist
+                                 for target_node, dist in sorted_distances}
                 self.nearest_nodes_cache[node] = nearest_nodes
-
-                origin_distances = [dist for _, dist in nearest_nodes]
-
                 self.signature_cache[node] = self._signature([target_node for target_node, _ in sorted_distances])
             except Exception as e:
                 print(f"Error processing node {node}: {e}")
@@ -308,8 +307,6 @@ class ClusteringEngine:
 
                 euclidean_distances.sort(key=lambda x: x[1])
                 self.nearest_nodes_cache[node] = euclidean_distances[:200]
-
-                origin_distances = [dist for _, dist in euclidean_distances[:200]]
 
                 self.signature_cache[node] = self._signature([target_node for target_node, _ in euclidean_distances[:200]])
 
@@ -338,15 +335,15 @@ class ClusteringEngine:
         _, indices = self.ball_tree.query(query_point, k=1)  # Find nearest node
         nearest_node_idx = indices[0][0]
         nearest_node = self.nodes_list[nearest_node_idx]
-        return self.signature_cache[nearest_node]
+        return self.signature_cache[nearest_node], nearest_node
 
-    def _merge_signature(self, origin_sig: List[int], dist_sig: List[int], x: int) -> List[int]:
+    def _merge_signature(self, origin_sig: List[int], dest_sig: List[int], x: int) -> List[int]:
         """
         Merge origin and destination signatures.
 
         Args:
             origin_sig (List[int]): Origin MinHash signature.
-            dist_sig (List[int]): Destination MinHash signature.
+            dest_sig (List[int]): Destination MinHash signature.
             x (int): Number of elements to take from origin signature per iteration.
 
         Returns:
@@ -354,14 +351,14 @@ class ClusteringEngine:
         """
         merged = []
         i = j = 0
-        len1, len2 = len(origin_sig), len(dist_sig)
+        len1, len2 = len(origin_sig), len(dest_sig)
         while i < len1 or j < len2:
             for _ in range(x):
                 if i < len1:
                     merged.append(origin_sig[i])
                     i += 1
             if j < len2:
-                merged.append(dist_sig[j])
+                merged.append(dest_sig[j])
                 j += 1
         return merged
 
@@ -392,34 +389,24 @@ class ClusteringEngine:
         """
         return [self._bands_hashing(sig[i * self.r: (i + 1) * self.r]) for i in range(self.b)]
 
-    def _similarity(self, user_location1: UserLocation, user_location2: UserLocation) -> float:
-        def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-            R = 6371000
-            
-            phi1 = math.radians(lat1)
-            phi2 = math.radians(lat2)
-            delta_phi = math.radians(lat2 - lat1)
-            delta_lambda = math.radians(lon2 - lon1)
-            
-            a = (math.sin(delta_phi / 2) ** 2 + 
-                math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2)
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            
-            return R * c
-        
-        origin_distance = haversine_distance(
-            user_location1.origin_lat, user_location1.origin_lng,
-            user_location2.origin_lat, user_location2.origin_lng
-        )
-        
-        destination_distance = haversine_distance(
-            user_location1.destination_lat, user_location1.destination_lng,
-            user_location2.destination_lat, user_location2.destination_lng
-        )
+    def _similarity(self, user1: User, user2: User) -> float:
+        orig_nearest_nodes = self.nearest_nodes_cache[user2.orig_node]
+        dest_nearest_nodes = self.nearest_nodes_cache[user2.dest_node]
 
-        total_distance = origin_distance + destination_distance
-                
-        return 1.0 - (total_distance / 1000)
+        orig_dist = orig_nearest_nodes.get(user1.orig_node, None)
+        dest_dist = dest_nearest_nodes.get(user1.dest_node, None)
+
+        if orig_dist is None or dest_dist is None:
+            return -1.0
+
+        total_distance = orig_dist + dest_dist
+
+        if total_distance == 0:
+            return 1.0
+
+        similarity = math.exp(-total_distance / 1000)
+        
+        return similarity
 
     def _collect_candidate_users(self, user_buckets: List[int]) -> set[int]:
         """
@@ -489,11 +476,7 @@ class ClusteringEngine:
             candid = self.users[candid_id]
             
             # Calculate similarity based on Euclidean distance
-            sim = self._similarity(user.user_location, candid.user_location)
-            if user.user_id == 10076 and candid_id == 10103:
-                print("sim = ", sim)
-            if user.user_id == 10103 and candid_id == 10076:
-                print("sim= ", sim)
+            sim = self._similarity(user, candid)
 
             if sim >= self.similarity_threshold:
                 if candid.companions_number < 2:
@@ -507,7 +490,7 @@ class ClusteringEngine:
         return self._update_or_create_group([user, near_users[0][0], near_users[1][0]])
 
     def _create_user(self, user_location: UserLocation, buckets: List[int],
-                    signature: List[int]) -> User:
+                    signature: List[int], orig_node: int, dest_node: int) -> User:
         """
         Create a new User instance.
         
@@ -526,6 +509,8 @@ class ClusteringEngine:
             group=None,
             buckets=buckets,
             signature=signature,
+            orig_node=orig_node,
+            dest_node=dest_node,
         )
         self.users[new_user.user_id] = new_user
         return new_user
@@ -551,9 +536,9 @@ class ClusteringEngine:
         if user_location.user_id in self.users.keys():
             return self.users[user_location.user_id].group
 
-        origin_sig = self._get_signature(user_location.origin_coords)
-        dist_sig = self._get_signature(user_location.destination_coords)
-        user_signature = self._merge_signature(origin_sig, dist_sig, 1)
+        origin_sig, org_node = self._get_signature(user_location.origin_coords)
+        dest_sig, dest_node = self._get_signature(user_location.destination_coords)
+        user_signature = self._merge_signature(origin_sig, dest_sig, 1)
 
         user_buckets = self._lsh(user_signature)
         candidate_users = self._collect_candidate_users(user_buckets)
@@ -562,6 +547,8 @@ class ClusteringEngine:
             user_location,
             user_buckets,
             user_signature,
+            org_node,
+            dest_node,
         )
         group = self._form_group(user, candidate_users)
         self._add_user_to_buckets(user)
