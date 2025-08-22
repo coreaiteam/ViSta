@@ -9,7 +9,7 @@ import pickle
 from sklearn.metrics.pairwise import cosine_similarity
 import math
 
-from .models import UserLocation, ClusterGroup
+from ..models import UserLocation, ClusterGroup
 
 
 place = "Savojbolagh County, Alborz Province, Iran"

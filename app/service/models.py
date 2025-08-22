@@ -1,6 +1,19 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
+from enum import Enum
+
+
+class DataSourceType(Enum):
+    DATABASE = "database"
+    STREAM = "stream"
+    API = "api"
+
+
+class UserStatus(Enum):
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    COMPLETED = "completed"
 
 
 @dataclass
@@ -11,6 +24,7 @@ class UserLocation:
     destination_lat: float
     destination_lng: float
     stored_at: datetime
+    status: UserStatus = UserStatus.PENDING
 
     @property
     def origin_coords(self) -> Tuple[float, float]:
@@ -58,4 +72,22 @@ class ClusterGroup:
             'meeting_point_destination': self.meeting_point_destination,
             'status': self.status,
             'user_count': len(self.users)
+        }
+
+
+@dataclass
+class OutputMessage:
+    message_type: str
+    data: Dict[str, Any]
+    timestamp: datetime = None
+
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+
+    def to_dict(self) -> Dict:
+        return {
+            "type": self.message_type,
+            "data": self.data,
+            "timestamp": self.timestamp.isoformat()
         }

@@ -1,0 +1,28 @@
+<!-- websocket_test.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>Clustering Service WebSocket Test</h1>
+    <div id="messages"></div>
+    
+    <script>
+        const ws = new WebSocket('ws://localhost:8000/ws/10000');
+        const messagesDiv = document.getElementById('messages');
+        
+        ws.onmessage = function(event) {
+            const message = document.createElement('div');
+            message.textContent = event.data;
+            messagesDiv.appendChild(message);
+        };
+        
+        ws.onopen = function() {
+            const message = document.createElement('div');
+            message.textContent = 'Connected to WebSocket';
+            messagesDiv.appendChild(message);
+        };
+    </script>
+</body>
+</html>

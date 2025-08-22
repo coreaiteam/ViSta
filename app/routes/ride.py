@@ -1,22 +1,19 @@
+from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from fastapi.responses import HTMLResponse
 from app.dependencies import protected_route
 from app.templates_utils import templates
-from app.database.crud import create_location, get_all_locations_as_dataframe, delete_location_by_user_id
+from app.database.crud import create_location, delete_location_by_user_id
 from app.database.base import get_db
-from app.database.models import *
+from app.database.models import User, Location
 from typing import Annotated, List
-from datetime import datetime, timezone
+from datetime import datetime
 from ..simulation.utils import add_random_data
+from app.service.connection_manager import get_websocket_manager
+from app.service.service import get_clustering_service
 
-from app.service.clustering_service import (
-    get_clustering_service, 
-    start_clustering_service, 
-    stop_clustering_service,
-    ClusteringService
-)
 
 router = APIRouter()
 
@@ -41,7 +38,10 @@ async def ride_page(
 ):
     await add_random_data()
 
-    print(delete_location_by_user_id(db, user.id))
+    delete_location_by_user_id(db, user.id)
+
+    clustering_service = get_clustering_service()
+    clustering_service.remove_user(user.id)
 
     user_response = UserResponse.model_validate(user)
     return templates.TemplateResponse("ride.html", {
@@ -64,18 +64,23 @@ async def request_ride(
 
 
 # =====================================================================================
-from ..service.connection_manager import connection_manager 
-from fastapi import WebSocket, WebSocketDisconnect
+
 
 @router.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: int):
-    await connection_manager.connect(websocket, user_id)
+    websocket_manager = get_websocket_manager()
+    await websocket_manager.connect(websocket, user_id)
+
+    # clustering_service = get_clustering_service()
+    # group = clustering_service.get_user_group(user_id)
+    # await websocket_manager.send_personal_message(user_id, group)
+
     try:
         while True:
-            # Keep connection alive and handle any incoming messages if needed
+            # Keep connection alive
             await websocket.receive_text()
     except WebSocketDisconnect:
-        connection_manager.disconnect(user_id)
+        websocket_manager.disconnect(user_id)
 
 
 class LocationHistoryCreate(BaseModel):
@@ -104,71 +109,71 @@ async def save_location_history(
     db: Annotated[Session, Depends(get_db)]
 ):
     # try:
-        # Check if user exists
-        user = db.query(User).filter(User.id == location_data.user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-
-        # Create new location history
-        create_location(
-            db=db,
-            user_id=location_data.user_id,
-            origin_lat=location_data.origin_lat,
-            origin_lng=location_data.origin_lng,
-            destination_lat=location_data.destination_lat,
-            destination_lng=location_data.destination_lng
+    # Check if user exists
+    user = db.query(User).filter(User.id == location_data.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
         )
 
-        # clustering_service = get_clustering_service()
-        # data = clustering_service.get_user_companions(user.id)
-        # print(f'companions: {data}')
-        # print(f'get_service_status: {clustering_service.get_service_status()}')
-        
-        ride_users = []
-        # if data is not None:
-        #     for comp in data['companions']:
-        #         ride_users.append({
-        #             "user_id": comp['user_id'],
-        #             "origin_lat": comp['origin_lat'],
-        #             "origin_lng": comp['origin_lng'],
-        #             "destination_lat": comp['destination_lat'],
-        #             "destination_lng": comp['destination_lng'],
-        #             "stored_at": comp['stored_at']
-        #         })
+    # Create new location history
+    create_location(
+        db=db,
+        user_id=location_data.user_id,
+        origin_lat=location_data.origin_lat,
+        origin_lng=location_data.origin_lng,
+        destination_lat=location_data.destination_lat,
+        destination_lng=location_data.destination_lng
+    )
 
-        # print('****************************************')
+    # clustering_service = get_clustering_service()
+    # data = clustering_service.get_user_companions(user.id)
+    # print(f'companions: {data}')
+    # print(f'get_service_status: {clustering_service.get_service_status()}')
 
-        # # Get locations and calculate groups
-        # df_locations = get_all_locations_as_dataframe(db)
-        # meeting_points, groups = get_od_meeting_points(
-        #     df_locations,
-        #     group_size=3,
-        #     origin_weight=0.6,
-        #     dest_weight=0.4,
-        #     max_distance=800
-        # )
+    ride_users = []
+    # if data is not None:
+    #     for comp in data['companions']:
+    #         ride_users.append({
+    #             "user_id": comp['user_id'],
+    #             "origin_lat": comp['origin_lat'],
+    #             "origin_lng": comp['origin_lng'],
+    #             "destination_lat": comp['destination_lat'],
+    #             "destination_lng": comp['destination_lng'],
+    #             "stored_at": comp['stored_at']
+    #         })
 
-        # # Find groups containing the current user
-        # matching_groups = [lst for lst in groups if user.id in lst][0]
-        # matching_groups.remove(user.id)
+    # print('****************************************')
 
-        # ride_users = []
+    # # Get locations and calculate groups
+    # df_locations = get_all_locations_as_dataframe(db)
+    # meeting_points, groups = get_od_meeting_points(
+    #     df_locations,
+    #     group_size=3,
+    #     origin_weight=0.6,
+    #     dest_weight=0.4,
+    #     max_distance=800
+    # )
 
-        # # Process each matching group
-        # for idx in matching_groups:
-        #     location = df_locations[df_locations['user_id'] == idx].squeeze()
-        #     ride_users.append({
-        #         "user_id": location.usercompanions_id,
-        #         "origin_lat": location.origin_lat,
-        #         "origin_lng": location.origin_lng,
-        #         "destination_lat": location.destination_lat,
-        #         "destination_lng": location.destination_lng,
-        #         "stored_at": location.stored_at
-        #     })
-        return ride_users
+    # # Find groups containing the current user
+    # matching_groups = [lst for lst in groups if user.id in lst][0]
+    # matching_groups.remove(user.id)
+
+    # ride_users = []
+
+    # # Process each matching group
+    # for idx in matching_groups:
+    #     location = df_locations[df_locations['user_id'] == idx].squeeze()
+    #     ride_users.append({
+    #         "user_id": location.usercompanions_id,
+    #         "origin_lat": location.origin_lat,
+    #         "origin_lng": location.origin_lng,
+    #         "destination_lat": location.destination_lat,
+    #         "destination_lng": location.destination_lng,
+    #         "stored_at": location.stored_at
+    #     })
+    return ride_users
 
     # except HTTPException:
     #     raise

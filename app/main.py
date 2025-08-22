@@ -1,31 +1,41 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.database.base import Base, engine, SessionLocal, get_db
+from app.database.base import Base, engine, SessionLocal
 from app.routes import home, ride, schedule, history
 from app.auth.router import router as auth_router
 from app.config import settings
-from sqlalchemy.orm import Session
-from app.database.crud import get_user_by_email, create_user
 from contextlib import asynccontextmanager
-from app.service.clustering_service import (
-    get_clustering_service, 
-    start_clustering_service, 
-    stop_clustering_service,
-    ClusteringService
-)
+from app.service.service import get_clustering_service
+from app.service.data_ingestion import DataSourceType
+from app.service.connection_manager import get_websocket_manager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db = SessionLocal()
     try:
-        start_clustering_service()
-        clustering_service = get_clustering_service()
+        clustering_service = get_clustering_service(clustering_interval=5)
+        websocket_manager = get_websocket_manager()
+
+        # Add database ingestor
+        clustering_service.add_data_ingestor(
+            DataSourceType.DATABASE,
+            {"session_factory": SessionLocal}
+        )
+
+        # Add WebSocket output handler
+        clustering_service.add_output_handler({
+            "type": "websocket",
+            "connection_manager": websocket_manager
+        })
+
+        clustering_service.start()
+
         yield
     finally:
-        stop_clustering_service()
-        db.close()
+        # Shutdown
+        if clustering_service:
+            clustering_service.stop()
 
 app = FastAPI(title="ViSta",  lifespan=lifespan, debug=settings.DEBUG)
 
@@ -50,9 +60,6 @@ app.include_router(home.router)
 app.include_router(ride.router)
 app.include_router(schedule.router)
 app.include_router(history.router)
-
-
-
 
 
 @app.get("/health")
