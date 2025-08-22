@@ -5,12 +5,11 @@ import numpy as np
 import osmnx as ox
 import networkx as nx
 from sklearn.neighbors import BallTree
-from sklearn.metrics.pairwise import cosine_similarity
 import pickle
 import random
 import uuid
 import math
-from .models import UserLocation, ClusterGroup
+from ..models import UserLocation, ClusterGroup
 
 
 # Define the geographical area for the street network graph
@@ -22,11 +21,16 @@ G = ox.graph_from_place(place, network_type='walk')
 @dataclass
 class InternalClusterGroup:
     """A dataclass to represent a group of users clustered together."""
-    group_id: str = field(default_factory=lambda: str(uuid.uuid4()))  # Unique identifier for the group
-    users: List[UserLocation] = field(default_factory=list)  # List of users in the group
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))  # Timestamp of group creation
-    meeting_point_origin: Optional[Tuple[float, float]] = None  # Coordinates of the origin meeting point
-    meeting_point_destination: Optional[Tuple[float, float]] = None  # Ascent: 0
+    group_id: str = field(default_factory=lambda: str(
+        uuid.uuid4()))  # Unique identifier for the group
+    users: List[UserLocation] = field(
+        default_factory=list)  # List of users in the group
+    created_at: datetime = field(default_factory=lambda: datetime.now(
+        timezone.utc))  # Timestamp of group creation
+    # Coordinates of the origin meeting point
+    meeting_point_origin: Optional[Tuple[float, float]] = None
+    # Ascent: 0
+    meeting_point_destination: Optional[Tuple[float, float]] = None
     status: str = "forming"  # Group status, either 'forming' or 'complete'
 
     def __eq__(self, other):
@@ -56,10 +60,12 @@ class InternalClusterGroup:
             return None, None
         origin_lats = [u.origin_lat for u in users]
         origin_lngs = [u.origin_lng for u in users]
-        origin_meeting = (np.mean(origin_lats), np.mean(origin_lngs))  # Average origin coordinates
+        origin_meeting = (np.mean(origin_lats), np.mean(
+            origin_lngs))  # Average origin coordinates
         dest_lats = [u.destination_lat for u in users]
         dest_lngs = [u.destination_lng for u in users]
-        dest_meeting = (np.mean(dest_lats), np.mean(dest_lngs))  # Average destination coordinates
+        # Average destination coordinates
+        dest_meeting = (np.mean(dest_lats), np.mean(dest_lngs))
         return origin_meeting, dest_meeting
 
     def update(self, new_user_location: UserLocation, remove=False):
@@ -81,8 +87,10 @@ class InternalClusterGroup:
         else:
             self.users.append(new_user_location)  # Add new user to the group
         # Recalculate meeting points after updating users
-        self.meeting_point_origin, self.meeting_point_destination = self._calculate_meeting_points(self.users)
-        self.status = "complete" if len(self.users) == 3 else "forming"  # Update status based on group size
+        self.meeting_point_origin, self.meeting_point_destination = self._calculate_meeting_points(
+            self.users)
+        # Update status based on group size
+        self.status = "complete" if len(self.users) == 3 else "forming"
         return None
 
     def to_cluster_group(self) -> ClusterGroup:
@@ -100,6 +108,7 @@ class InternalClusterGroup:
             meeting_point_destination=self.meeting_point_destination,
             status=self.status
         )
+
 
 @dataclass
 class User:
@@ -147,9 +156,11 @@ class User:
         """
         return {}
 
+
 class ClusteringEngine:
     """A class to cluster users based on their origin and destination locations."""
-    def __init__(self, place: str = "Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran", 
+
+    def __init__(self, place: str = "Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran",
                  k_nearest: int = 100, similarity_threshold: float = 0.5,
                  cache_file: str = "signatures.pkl"):
         """
@@ -168,7 +179,8 @@ class ClusteringEngine:
         self.G = None  # Street network graph
         self.nodes_list = None  # List of graph nodes
         self.node_to_idx = None  # Mapping of nodes to indices
-        self.nearest_nodes_cache:Dict[int, Dict[int, float]] = {}  # Cache for precomputed nearest nodes
+        # Cache for precomputed nearest nodes
+        self.nearest_nodes_cache: Dict[int, Dict[int, float]] = {}
         self.signature_cache = {}  # Cache for precomputed signatures
         self.ball_tree = None  # BallTree for nearest neighbor search
         self.node_coords = None  # Coordinates of graph nodes
@@ -186,8 +198,10 @@ class ClusteringEngine:
         self.b = 15  # Number of bands
         self.M = self.r * self.b  # Total number of hash functions
         random.seed(42)  # Set random seed for reproducibility
-        self.random_a = [random.randint(100, 400) for i in range(self.M)]  # Random coefficients for hashing
-        self.random_b = [random.randint(1, 200) for i in range(self.M)]  # Random offsets for hashing
+        self.random_a = [random.randint(100, 400) for i in range(
+            self.M)]  # Random coefficients for hashing
+        self.random_b = [random.randint(1, 200) for i in range(
+            self.M)]  # Random offsets for hashing
         self.p = 34359738421  # Large prime for hashing
 
     def _load_or_compute_graph(self):
@@ -195,7 +209,8 @@ class ClusteringEngine:
         print(f"Loading graph for {self.place}...")
         self.G = ox.graph_from_place(self.place, network_type='walk')
         self.nodes_list = list(self.G.nodes())  # Get list of graph nodes
-        self.node_to_idx = {node: idx for idx, node in enumerate(self.nodes_list)}  # Map nodes to indices
+        self.node_to_idx = {node: idx for idx, node in enumerate(
+            self.nodes_list)}  # Map nodes to indices
         print(f"Graph loaded with {len(self.nodes_list)} nodes")
 
     def _build_ball_tree(self):
@@ -203,11 +218,14 @@ class ClusteringEngine:
         print("Building BallTree for fast nearest neighbor search...")
         self.node_coords = []
         for node in self.nodes_list:
-            lat = np.radians(self.G.nodes[node]['y'])  # Convert latitude to radians
-            lng = np.radians(self.G.nodes[node]['x'])  # Convert longitude to radians
+            # Convert latitude to radians
+            lat = np.radians(self.G.nodes[node]['y'])
+            # Convert longitude to radians
+            lng = np.radians(self.G.nodes[node]['x'])
             self.node_coords.append([lat, lng])
         self.node_coords = np.array(self.node_coords)
-        self.ball_tree = BallTree(self.node_coords, metric='haversine')  # Use haversine metric for geographical data
+        # Use haversine metric for geographical data
+        self.ball_tree = BallTree(self.node_coords, metric='haversine')
         print("BallTree built successfully")
 
     def _load_or_compute_precomputed_data(self):
@@ -283,23 +301,27 @@ class ClusteringEngine:
                 distances = nx.single_source_dijkstra_path_length(
                     self.G, node, cutoff=5000, weight='length'
                 )
-                sorted_distances = sorted(distances.items(), key=lambda x: x[1])[:200]
+                sorted_distances = sorted(
+                    distances.items(), key=lambda x: x[1])[:200]
 
                 # Store nearest nodes
                 nearest_nodes = {target_node: dist
                                  for target_node, dist in sorted_distances}
                 self.nearest_nodes_cache[node] = nearest_nodes
-                self.signature_cache[node] = self._signature([target_node for target_node, _ in sorted_distances])
+                self.signature_cache[node] = self._signature(
+                    [target_node for target_node, _ in sorted_distances])
             except Exception as e:
                 print(f"Error processing node {node}: {e}")
                 # Fallback to Euclidean distances if Dijkstra fails
-                node_coords = (self.G.nodes[node]['y'], self.G.nodes[node]['x'])
+                node_coords = (self.G.nodes[node]
+                               ['y'], self.G.nodes[node]['x'])
                 euclidean_distances = []
                 for other_node in self.nodes_list:
                     if other_node != node:
-                        other_coords = (self.G.nodes[other_node]['y'], self.G.nodes[other_node]['x'])
+                        other_coords = (
+                            self.G.nodes[other_node]['y'], self.G.nodes[other_node]['x'])
                         dist = ox.distance.euclidean_dist_vec(
-                            node_coords[0], node_coords[1], 
+                            node_coords[0], node_coords[1],
                             other_coords[0], other_coords[1]
                         )
                         euclidean_distances.append((other_node, dist))
@@ -308,7 +330,8 @@ class ClusteringEngine:
                 euclidean_distances.sort(key=lambda x: x[1])
                 self.nearest_nodes_cache[node] = euclidean_distances[:200]
 
-                self.signature_cache[node] = self._signature([target_node for target_node, _ in euclidean_distances[:200]])
+                self.signature_cache[node] = self._signature(
+                    [target_node for target_node, _ in euclidean_distances[:200]])
 
     def _save_cache(self):
         """Save precomputed signatures to a cache file."""
@@ -332,7 +355,8 @@ class ClusteringEngine:
         """
         lat, lng = coords
         query_point = np.array([[np.radians(lat), np.radians(lng)]])
-        _, indices = self.ball_tree.query(query_point, k=1)  # Find nearest node
+        _, indices = self.ball_tree.query(
+            query_point, k=1)  # Find nearest node
         nearest_node_idx = indices[0][0]
         nearest_node = self.nodes_list[nearest_node_idx]
         return self.signature_cache[nearest_node], nearest_node
@@ -405,7 +429,7 @@ class ClusteringEngine:
             return 1.0
 
         similarity = math.exp(-total_distance / 1000)
-        
+
         return similarity
 
     def _collect_candidate_users(self, user_buckets: List[int]) -> set[int]:
@@ -454,27 +478,29 @@ class ClusteringEngine:
                 created_at=datetime.now(timezone.utc),
             )
             group_users[1].update_group(group)
-        group.update(group_users[0].user_location)  # Add the first user to the group
-        group_users[0].update_group(group)  # Update the user's group assignment
+        # Add the first user to the group
+        group.update(group_users[0].user_location)
+        # Update the user's group assignment
+        group_users[0].update_group(group)
 
         return group
 
     def _form_group(self, user: User, candidate_users: set[int]) -> InternalClusterGroup:
         """
         Form a group for a user by finding similar users from candidates.
-        
+
         Args:
             user (User): The user to cluster.
             candidate_users (set[int]): Set of candidate user IDs.
-            
+
         Returns:
             Optional[InternalClusterGroup]: The formed group, or None if no group formed.
         """
         near_users: List[Tuple[User, int]] = []
-        
+
         for candid_id in candidate_users:
             candid = self.users[candid_id]
-            
+
             # Calculate similarity based on Euclidean distance
             sim = self._similarity(user, candid)
 
@@ -485,24 +511,24 @@ class ClusteringEngine:
             return None
         if len(near_users) == 1:
             return self._update_or_create_group([user, near_users[0][0]])
-        
+
         near_users.sort(key=lambda x: x[1], reverse=True)
         return self._update_or_create_group([user, near_users[0][0], near_users[1][0]])
 
     def _create_user(self, user_location: UserLocation, buckets: List[int],
-                    signature: List[int], orig_node: int, dest_node: int) -> User:
+                     signature: List[int], orig_node: int, dest_node: int) -> User:
         """
         Create a new User instance.
-        
+
         Args:
             user_location (UserLocation): User's location data.
             buckets (List[int]): LSH buckets for the user.
             signature (List[int]): MinHash signature.
-            
+
         Returns:
             User: The created user instance.
         """
-        
+
         new_user = User(
             user_id=user_location.user_id,
             user_location=user_location,
@@ -526,10 +552,10 @@ class ClusteringEngine:
     def add_user(self, user_location: UserLocation) -> InternalClusterGroup:
         """
         Add a user to the clustering engine and attempt to form a group.
-        
+
         Args:
             user_location (UserLocation): User's location data.
-            
+
         Returns:
             Optional[ClusterGroup]: The group the user was added to, or None.
         """
@@ -537,12 +563,13 @@ class ClusteringEngine:
             return self.users[user_location.user_id].group
 
         origin_sig, org_node = self._get_signature(user_location.origin_coords)
-        dest_sig, dest_node = self._get_signature(user_location.destination_coords)
+        dest_sig, dest_node = self._get_signature(
+            user_location.destination_coords)
         user_signature = self._merge_signature(origin_sig, dest_sig, 1)
 
         user_buckets = self._lsh(user_signature)
         candidate_users = self._collect_candidate_users(user_buckets)
-        
+
         user = self._create_user(
             user_location,
             user_buckets,
@@ -552,7 +579,7 @@ class ClusteringEngine:
         )
         group = self._form_group(user, candidate_users)
         self._add_user_to_buckets(user)
-        
+
         return group if group else None
 
     def remove_user(self, user_location: UserLocation) -> Optional[ClusterGroup]:
@@ -569,12 +596,14 @@ class ClusteringEngine:
         if user_location.user_id in self.users.keys():
             user = self.users.pop(user_location.user_id)
             for b in user.buckets:
-                self.buckets[b].remove(user.user_id)  # Remove user from buckets
+                # Remove user from buckets
+                self.buckets[b].remove(user.user_id)
             if user.companions_number > 0:
                 group = user.group
                 alone_user_id = group.update(user_location, remove=True)
                 if alone_user_id:
-                    self.users[alone_user_id].update_group(group)  # Update group for remaining user
+                    self.users[alone_user_id].update_group(
+                        group)  # Update group for remaining user
         return group.to_cluster_group() if group else None
 
     def remove_group_users(self, group: ClusterGroup):
@@ -599,7 +628,8 @@ class ClusteringEngine:
             if user_location.user_id in self.users.keys():
                 user = self.users.pop(user_location.user_id)
                 for b in user.buckets:
-                    self.buckets[b].remove(user.user_id)  # Remove user from buckets
+                    # Remove user from buckets
+                    self.buckets[b].remove(user.user_id)
 
     def cluster_users(self, user_locations: List[UserLocation]) -> List[ClusterGroup]:
         """
