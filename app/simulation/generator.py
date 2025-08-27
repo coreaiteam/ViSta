@@ -3,6 +3,8 @@ import json
 import random
 import networkx as nx
 from typing import List, Tuple, Optional
+from sklearn.neighbors import BallTree
+import numpy as np
 
 
 data = [
@@ -33,7 +35,7 @@ class OSMDataGenerator:
     def __init__(
         self,
         graph: nx.MultiDiGraph,
-        num_main_points: int = 10,
+        num_main_points: int = 2,
         neighbors_k: int = 100,
         sample_size: int = 20,
         max_walk_dist: int = 500,
@@ -47,49 +49,56 @@ class OSMDataGenerator:
         self.max_walk_dist = max_walk_dist
         self.random = random.Random(seed)
 
-    def _random_node(self, node_type: str = 'origin') -> int:
+        # placeholders for BallTree
+        self.balltree = None
+        self.node_ids = None
+        self.coords_rad = None
+
+        self._build_balltree()
+
+    def _build_balltree(self):
+        """
+        Build a BallTree from the graph nodes for fast nearest neighbor queries.
+        Call this once after graph is loaded.
+        """
+        self.node_ids = list(self.graph.nodes)
+        coords = np.array(
+            [(self.graph.nodes[n]["y"], self.graph.nodes[n]["x"])
+             for n in self.node_ids]
+        )
+
+        # Convert to radians for haversine metric
+        self.coords_rad = np.radians(coords)
+        self.balltree = BallTree(self.coords_rad, metric="haversine")
+
+    def _get_main_node(self, node_type: str = "origin", i: int = 0) -> int:
         """
         Pick a node from the lookup table based on lat/lon coordinates.
-
-        Args:
-            node_type: Either 'origin' or 'dest' to specify which coordinate to use
-
-        Returns:
-            Node ID from the graph that's closest to the lookup table coordinate
         """
-        # Randomly select an entry from the lookup table
-        entry = self.random.choice(self.lookup_data)
+        entry = data[i]
 
-        # Get the appropriate coordinate based on node_type
-        if node_type == 'origin':
-            target_lat, target_lon = entry['origin']
-        else:  # node_type == 'dest'
-            target_lat, target_lon = entry['dest']
+        if node_type == "origin":
+            target_lat, target_lon = entry["origin"]
+        else:
+            target_lat, target_lon = entry["dest"]
 
-        # Find the closest node in the graph to this coordinate
         closest_node = self._find_closest_node(target_lat, target_lon)
         return closest_node
 
     def _find_closest_node(self, target_lat: float, target_lon: float) -> int:
         """
-        Find the node in the graph closest to the given lat/lon coordinates.
+        Find the closest graph node using BallTree (Haversine distance).
         """
-        min_distance = float('inf')
-        closest_node = None
+        if self.balltree is None:
+            raise RuntimeError(
+                "BallTree not built. Call _build_balltree() first.")
 
-        for node_id in self.graph.nodes:
-            node_lat = self.graph.nodes[node_id]["y"]
-            node_lon = self.graph.nodes[node_id]["x"]
+        target_rad = np.radians([[target_lat, target_lon]])
+        dist, ind = self.balltree.query(target_rad, k=1)
 
-            # Calculate Euclidean distance (for finding closest node)
-            distance = ((target_lat - node_lat) ** 2 +
-                        (target_lon - node_lon) ** 2) ** 0.5
-
-            if distance < min_distance:
-                min_distance = distance
-                closest_node = node_id
-
-        return closest_node
+        # Index lookup
+        node_id = self.node_ids[ind[0][0]]
+        return node_id
 
     def _get_nearby_nodes(self, node: int) -> List[int]:
         """
@@ -112,9 +121,9 @@ class OSMDataGenerator:
         data = []
         used_origins = set()
         used_dests = set()
-        for _ in range(self.num_main_points):
-            origin = self._random_node('origin')
-            dest = self._random_node('dest')
+        for i in range(self.num_main_points):
+            origin = self._get_main_node('origin', i)
+            dest = self._get_main_node('dest', i)
 
             nearby_origins = self._get_nearby_nodes(origin)
             nearby_dests = self._get_nearby_nodes(dest)

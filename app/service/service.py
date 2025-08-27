@@ -62,7 +62,7 @@ class ClusteringService:
                     f"Error ingesting data from {ingestor.source_type}: {e}")
 
     def _process_output(self, message: OutputMessage) -> None:
-        """Process output through all registered handlers"""
+        """Process outpuDATABASEt through all registered handlers"""
         for handler in self.output_handlers:
             try:
                 handler.handle_output(message)
@@ -77,9 +77,6 @@ class ClusteringService:
             try:
                 # Ingest new data
                 self._ingest_data()
-
-                for i in self.data_storage.get_pending_users():
-                    print(i.user_id)
 
                 # Get pending users
                 pending_users = self.data_storage.get_pending_users()
@@ -111,15 +108,15 @@ class ClusteringService:
                         # Process output
                         self._process_output(message)
 
-                # Process any updates (user removals, etc.)
-                while self.data_storage.has_updates():
-                    update = self.data_storage.get_update(block=False)
-                    if update:
-                        message = OutputMessage(
-                            message_type=update["type"],
-                            data=update
-                        )
-                        self._process_output(message)
+                # # Process any updates (user removals, etc.)
+                # while self.data_storage.has_updates():
+                #     update = self.data_storage.get_update(block=False)
+                #     if update:
+                #         message = OutputMessage(
+                #             message_type=update["type"],
+                #             data=update
+                #         )
+                #         self._process_output(message)
 
             except Exception as e:
                 logger.error(f"Error in clustering worker: {e}")

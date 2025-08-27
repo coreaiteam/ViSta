@@ -205,13 +205,6 @@ class ClusteringEngine:
         # Matrix with 2n columns (n for origins, n for destinations)
         matrix = np.zeros((n_users, 2 * n_nodes))
 
-        start_time = time.time()
-        origin_nearest = self._find_k_nearest_nodes(
-            user_locations[0].origin_coords)
-        end_time = time.time()
-        print(
-            f"Time taken for _find_k_nearest_nodes: {end_time - start_time:.4f} seconds")
-
         for user_idx, user in enumerate(user_locations):
             # Process origin
             origin_nearest = self._find_k_nearest_nodes(user.origin_coords)
@@ -268,11 +261,7 @@ class ClusteringEngine:
 
         # Create feature matrix
 
-        start_time = time.time()
         feature_matrix = self._create_feature_matrix(user_locations)
-        end_time = time.time()
-        print(
-            f"Time taken for feature_matrix: {end_time - start_time:.4f} seconds")
 
         # Calculate similarity matrix using cosine similarity (approximates MIPS for normalized vectors)
         similarity_matrix = cosine_similarity(feature_matrix)
@@ -281,7 +270,6 @@ class ClusteringEngine:
         groups = []
         used_users = set()
 
-        start_time = time.time()
         for i, user1 in enumerate(user_locations):
             if user1.user_id in used_users:
                 continue
@@ -323,7 +311,4 @@ class ClusteringEngine:
                     status="complete" if len(group_users) == 3 else "forming"
                 )
                 groups.append(group)
-        end_time = time.time()
-        print(f"Time taken for gouping: {end_time - start_time:.4f} seconds")
-        print(f"Created {len(groups)} groups")
         return groups
