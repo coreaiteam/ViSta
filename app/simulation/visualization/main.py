@@ -1,47 +1,54 @@
 import dash
-from dash import Input, Output, State, html
+from dash import Input, Output, State, html, callback
 from dash.exceptions import PreventUpdate
-from dash import Dash, Input, Output, State, callback  # noqa: F811
-from datetime import datetime, timezone
 import dash_leaflet as dl
 import dash_bootstrap_components as dbc
-
+from datetime import datetime, timezone
 
 from .utils import generate_data, loc2userlocation
-from .layouts import main_layout, map_handler
+from .layouts import main_layout
+from .components import map_handler
 from app.service.models import UserLocation
-
-
 from ...service.service import get_clustering_service
 
-
-## App Initialization
-app = Dash(__name__, external_stylesheets=[dbc.themes.DARKLY, dbc.icons.BOOTSTRAP])
+# App Initialization
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY, dbc.icons.BOOTSTRAP])
 app.layout = main_layout
 
-## Clustering Service
+# Clustering Service
 clustering_service = get_clustering_service()
 clustering_service.start()
 
-## User Generator
-data = generate_data()
-data = iter(data)
+# User Generator
+data = iter(generate_data())
 
-## Users
+## Temparary User
+temp_user = {"origin": None, "destination": None}
 
-# Callback to capture map clicks and update temporary coordinates
+## Temparary Markers
+temp_markers = []
+
+
 @callback(
-    Output("temp-coordinates", "data"),
-    Output("map-container", "children", allow_duplicate=True),
-    Input("main-map", "clickData"),
-    State("click-mode", "value"),
-    State("temp-coordinates", "data"),
-
+    Output("temp-markers", "children", allow_duplicate=True),
+    [
+        Input("main-map", "clickData"),
+        State("click-mode", "value"),
+    ],
     prevent_initial_call=True,
 )
-def capture_map_click(
-    click_data, click_mode, temp_coords,
-):
+def capture_map_click(click_data, click_mode):
+    """
+    Callback to capture map clicks and update temporary coordinates with markers.
+
+    Args:
+        click_data: Data from map click event
+        click_mode: Current click mode (origin/destination)
+        temp_coords: Temporary coordinates stored in the app
+
+    Returns:
+        Tuple of updated coordinates and updated map with temporary markers
+    """
     if not click_data:
         raise PreventUpdate
 
@@ -50,111 +57,109 @@ def capture_map_click(
     coords = [lat, lng]
 
     # Update temp_coords based on click_mode
-    updated_coords = temp_coords.copy()
-    updated_coords[click_mode] = coords
+    global temp_user
+    temp_user[click_mode] = None
+    temp_user[click_mode] = coords
 
-    # Add temporary markers for Origin
-    temp_markers = []
-    if updated_coords["origin"]:
-        temp_markers.append(
-            dl.Marker(
-                position=updated_coords["origin"],
-                children=[
-                    dl.Tooltip("Selected Origin (Temporary)"),
-                    dl.Popup(
-                        [
-                            html.H4("Selected Origin"),
-                            html.P(f"Coordinates: {updated_coords['origin']}"),
-                        ]
-                    ),
-                ],
-            )
-        )
 
-    # Add temporary markers for Destination
-    if updated_coords["destination"]:
-        temp_markers.append(
-            dl.Marker(
-                position=updated_coords["destination"],
-                children=[
-                    dl.Tooltip("Selected Destination (Temporary)"),
-                    dl.Popup(
-                        [
-                            html.H4("Selected Destination"),
-                            html.P(f"Coordinates: {updated_coords['destination']}"),
-                        ]
-                    ),
-                ],
+    # Create temporary markers
+    global temp_markers
+    for point_type, position in [
+        ("Origin", temp_user.get("origin")),
+        ("Destination", temp_user.get("destination")),
+    ]:
+        if position:
+            temp_markers.append(
+                dl.Marker(
+                    position=position,
+                    children=[
+                        dl.Tooltip(f"Selected {point_type} (Temporary)"),
+                        dl.Popup(
+                            [
+                                html.H4(f"Selected {point_type}"),
+                                html.P(f"Coordinates: {position}"),
+                            ]
+                        ),
+                    ],
+                )
             )
-        )
+
+    return temp_markers
+
+
+@callback(
+    Output("users", "children", allow_duplicate=True),
+    Output("clusters", "children", allow_duplicate=True),
+    Input("add-random-user-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def add_random_user(n_clicks):
+    """
+    Callback to add a new random user to the map.
+
+    Args:
+        n_clicks: Number of clicks on random user button
+
+    Returns:
+        Updated map with new random user
+    """
+    if not n_clicks:
+        raise PreventUpdate
+
+    user_id = len(clustering_service.get_all_users()) + 1
+    new_user = loc2userlocation(user_id=user_id, loc=next(data))
+    clustering_service.add_user_location(new_user)
 
     users = clustering_service.get_all_users()
     clusters = clustering_service.get_all_active_groups()
-    updated_map = map_handler.create_map(
-        users=users, components=temp_markers, clusters=clusters
-    )
-
-    return (updated_coords, updated_map)
+    userlayer, cluster_layer =  map_handler.create_users_and_clusters_layer(users=users, clusters=clusters)
+    return userlayer, cluster_layer
 
 
-# Callback to add new users (random or selected)
 @callback(
-    Output("map-container", "children", allow_duplicate=True),
-    Input("add-random-user-btn", "n_clicks"),
+    Output("users", "children", allow_duplicate=True),
+    Output("clusters", "children", allow_duplicate=True),
     Input("add-selected-user-btn", "n_clicks"),
-    State("temp-coordinates", "data"),
     prevent_initial_call=True,
 )
-def add_new_user(random_btn_clicks, selected_btn_clicks, temp_coords):
-    ctx = dash.callback_context
-    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+def add_selected_user(n_clicks):
+    """
+    Callback to add a user with selected coordinates.
 
-    if triggered_id == "add-random-user-btn" and random_btn_clicks > 0:
-        # Generate and add a random user
+    Args:
+        n_clicks: Number of clicks on selected user button
+        temp_coords: Temporary coordinates for selected user
 
-        # new_user = UserLocation.from_dict(generate_random_users(
-        #     n=1, origin_center=(35.795, 51.435), destination_center=(35.650, 51.380)
-        # ))
-        user_id = len(clustering_service.get_all_users()) + 1
-        new_user = loc2userlocation(user_id=user_id, loc=next(data))
+    Returns:
+        Updated map with new selected user
+    """
+    if not n_clicks:
+        raise PreventUpdate
 
-        clustering_service.add_user_location(new_user)
-        users = clustering_service.get_all_users()
-        clusters = clustering_service.get_all_active_groups()
+    global temp_user
+    if not (temp_user.get("origin") and temp_user.get("destination")):
+        raise PreventUpdate
 
-        # new_user[0]["user_id"] = len(current_users) + 1
-        # updated_users = current_users + new_user
-        updated_map = map_handler.create_map(users=users, clusters=clusters)
-        return updated_map
+    new_user = UserLocation.from_dict(
+        {
+            "user_id": len(clustering_service.get_all_users()) + 1,
+            "origin_lat": temp_user["origin"][0],
+            "origin_lng": temp_user["origin"][1],
+            "destination_lat": temp_user["destination"][0],
+            "destination_lng": temp_user["destination"][1],
+            "stored_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    temp_user = {"origin": None, "destination": None}
+    global temp_markers
+    temp_markers = []
+    clustering_service.add_user_location(new_user)
 
-    elif triggered_id == "add-selected-user-btn" and selected_btn_clicks > 0:
-        # Add user with selected origin/destination
-        if temp_coords["origin"] is None or temp_coords["destination"] is None:
-            raise PreventUpdate  # Don't add if both coordinates aren't set
-
-        new_user = UserLocation.from_dict(
-            {
-                "user_id": len(clustering_service.get_all_users()) + 1,  # Incremental integer ID
-                "origin_lat": temp_coords["origin"][0],
-                "origin_lng": temp_coords["origin"][1],
-                "destination_lat": temp_coords["destination"][0],
-                "destination_lng": temp_coords["destination"][1],
-                "stored_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-        clustering_service.add_user_location(new_user)
-        users = clustering_service.get_all_users()
-        clusters = clustering_service.get_all_active_groups()
-        # Create a new user matching the UserLocation.to_dict() structure
-
-        # updated_users = current_users + new_user
-        updated_map = map_handler.create_map(users=users, clusters=clusters)
-        return updated_map
-
-    raise PreventUpdate
-
-
+    users = clustering_service.get_all_users()
+    clusters = clustering_service.get_all_active_groups()
+    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users=users, clusters=clusters)
+    return user_layer, cluster_layer
 
 
 if __name__ == "__main__":
-    app.run(port="8080")
+    app.run(port=8080)
