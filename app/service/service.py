@@ -211,7 +211,10 @@ class ClusteringService:
                 "users_in_groups": len(self.data_storage.user_to_group),
                 "clustering_interval": self.clustering_interval,
             }
-
+        
+    def get_all_users(self)-> List[UserLocation]: 
+        """Get all active users"""
+        return [user.to_dict() for user in self.data_storage.get_all_users()]
 
 _clustering_service: ClusteringService | None = None
 

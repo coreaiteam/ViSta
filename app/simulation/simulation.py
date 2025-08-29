@@ -7,6 +7,7 @@ import osmnx as ox
 import time
 from datetime import datetime, timezone
 from ..service.connection_manager import get_websocket_manager
+from .visualization.main import app
 
 PLACE = "Savojbolagh County, Alborz Province, Iran"
 
@@ -17,6 +18,7 @@ def _callback(message):
     print('===== message : ', end=' ')
     print(message)
     print('----------------------------------------------------')
+
 
 
 def get_service():
@@ -62,23 +64,24 @@ def main():
     # Add database ingestor
     # service.add_data_ingestor(
     #     DataSourceType.DATABASE,
-    #     {"session_factory": SessionLocal}
+    #     {"sessi5on_factory": SessionLocal}
     # )
 
-    # # Add WebSocket output handler
-    # websocket_manager = get_websocket_manager()
-    # service.add_output_handler({
-    #     "type": "websocket",
-    #     "connection_manager": websocket_manager
-    # })
-
+    # Add WebSocket output handler
+    websocket_manager = get_websocket_manager()
     service.add_output_handler({
-        "type": "callback",
-        "callback": _callback
+        "type": "websocket",
+        "connection_manager": websocket_manager
     })
+    
 
+    # service.add_output_handler({
+    #     "type": "callback",
+    #     "callback": _callback
+    # })
     try:
         # Keep the service running
+        app.run()
         while True:
             for user_id, loc in enumerate(data):
                 service.add_user_location(loc2userlocation(user_id, loc))

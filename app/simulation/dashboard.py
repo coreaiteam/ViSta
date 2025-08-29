@@ -1,6 +1,6 @@
 # dashboard.py - Main Dash dashboard class
 import dash
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output, State, Dash
 import plotly.graph_objects as go
 import threading
 import time
@@ -9,15 +9,13 @@ from queue import Queue
 import json
 
 from .service_manager import ServiceManager
-
+from .visualization.main import app
 
 class ClusteringDashboard:
     """Dash-based dashboard for clustering service"""
 
-    def __init__(self, host='127.0.0.1', port=8050, debug=True):
-        self.host = host
-        self.port = port
-        self.debug = debug
+    def __init__(self, app: Dash):  # noqa: F811
+
 
         # Initialize service manager
         self.service_manager = ServiceManager()
@@ -28,9 +26,9 @@ class ClusteringDashboard:
         self.results_data = []
 
         # Create Dash app
-        self.app = dash.Dash(__name__, title="Clustering Service Dashboard")
-        self._setup_layout()
-        self._setup_callbacks()
+        self.app = app
+        # self._setup_layout()
+        # self._setup_callbacks()
 
         # Background thread for handling results
         self.result_thread = None
@@ -366,11 +364,10 @@ class ClusteringDashboard:
             target=self._result_handler, daemon=True)
         self.result_thread.start()
 
-        print(f"🌐 Dashboard available at: http://{self.host}:{self.port}")
+        print("🌐 Dashboard available at: http://127.0.0.1:8050")
 
         try:
-            self.app.run(
-                host=self.host, port=self.port, debug=self.debug)
+            self.app.run(debug=True)
         except KeyboardInterrupt:
             self.stop()
 

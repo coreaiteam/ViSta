@@ -44,6 +44,16 @@ class UserLocation:
             'stored_at': self.stored_at.isoformat()
         }
 
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            user_id=int(data["user_id"]),
+            origin_lat=data["origin_lat"],
+            origin_lng=data["origin_lng"],
+            destination_lat=data["destination_lat"],
+            destination_lng=data["destination_lng"],
+            stored_at=datetime.fromisoformat(data["stored_at"]),
+        )
 
 @dataclass
 class ClusterGroup:

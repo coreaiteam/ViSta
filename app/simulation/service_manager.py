@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from ..service.service import get_clustering_service
+from ..service.connection_manager import get_websocket_manager
 from ..service.models import UserLocation
 
 
@@ -18,11 +19,18 @@ class ServiceManager:
         """Start the clustering service"""
         self.service = get_clustering_service(clustering_interval=5)
 
-        # Add callback handler
+        # # Add callback handler
+        # self.service.add_output_handler({
+        #     "type": "callback",
+        #     "callback": self._handle_service_result
+        # })
+            # Add WebSocket output handler
+        websocket_manager = get_websocket_manager()
         self.service.add_output_handler({
-            "type": "callback",
-            "callback": self._handle_service_result
+            "type": "websocket",
+            "connection_manager": websocket_manager
         })
+    
 
         self.service.start()
         print("✅ Clustering service started")
