@@ -1,7 +1,7 @@
 import dash_leaflet as dl
 from dash import html
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Optional, Tuple
 
 from app.service.models import ClusterGroup, UserLocation
 
