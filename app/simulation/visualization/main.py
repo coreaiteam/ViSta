@@ -63,7 +63,15 @@ def capture_map_click(click_data, click_mode):
 
 
     # Create temporary markers
+
     global temp_markers
+
+    if click_mode == "origin":
+        temp_markers = []
+    
+    if click_mode == "destination":
+        temp_markers.pop()
+
     for point_type, position in [
         ("Origin", temp_user.get("origin")),
         ("Destination", temp_user.get("destination")),
@@ -163,3 +171,4 @@ def add_selected_user(n_clicks):
 
 if __name__ == "__main__":
     app.run(port=8080)
+
