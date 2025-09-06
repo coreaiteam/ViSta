@@ -169,6 +169,85 @@ def add_selected_user(n_clicks):
     return user_layer, cluster_layer
 
 
+@callback(
+    Output("users", "children", allow_duplicate=True),
+    Output("clusters", "children", allow_duplicate=True),
+    Input("users-refresh-interval", "n_intervals"),
+    prevent_initial_call=True,
+)
+def refresh_map(n_intervals):
+    """
+    Periodically refresh the map with updated users and clusters.
+    """
+    users = clustering_service.get_all_users()
+    clusters = clustering_service.get_all_active_groups()
+
+    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(
+        users=users,
+        clusters=clusters
+    )
+    return user_layer, cluster_layer
+
+
+
+@callback(
+    Output("temp-markers", "children", allow_duplicate=True),
+    Input("clear-markers-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def clear_temp_markers(n_clicks):
+    """
+    Clears all temporary markers from the map.
+    """
+    global temp_user, temp_markers
+    temp_user = {"origin": None, "destination": None}
+    temp_markers = []
+    return []
+
+
+
+@callback(
+    Output("stats-container", "children"),
+    Input("stats-refresh-interval", "n_intervals"),  # reuse the interval you already have
+    prevent_initial_call=True,
+)
+def update_stats(n_intervals):
+    """
+    Updates the statistics card with the latest user and cluster counts.
+    """
+    users = clustering_service.get_all_users()
+    clusters = clustering_service.get_all_active_groups()
+
+    total_users = len(users)
+    total_clusters = len(clusters)
+
+    return dbc.Row(
+        [
+            dbc.Col(
+                html.Div(
+                    [
+                        html.H5("Total Users", className="text-muted"),
+                        html.H3(total_users, className="text-success fw-bold"),
+                    ],
+                    className="text-center",
+                ),
+                width=6,
+            ),
+            dbc.Col(
+                html.Div(
+                    [
+                        html.H5("Total Clusters", className="text-muted"),
+                        html.H3(total_clusters, className="text-primary fw-bold"),
+                    ],
+                    className="text-center",
+                ),
+                width=6,
+            ),
+        ],
+        className="g-3",
+    )
+
+
 if __name__ == "__main__":
     app.run(port=8080)
 

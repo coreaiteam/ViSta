@@ -29,7 +29,6 @@ class MapHandler:
                                 checked=False,
                                 name="Clusters & Meeting Points",
                             ),
-
                             dl.Overlay(
                                 dl.LayerGroup(id="temp-markers"),
                                 checked=True,
@@ -42,7 +41,7 @@ class MapHandler:
                 id=map_id,
                 zoom=12,
                 center=self.map_center,
-                style={"height": "50vh"},
+                style={"width": "100%", "height": "100%"},
             ),
         )
 
@@ -229,7 +228,6 @@ class MapHandler:
 
         user_layers = user_line_group + user_marker_group
 
-        
         return user_layers, cluster_layers
 
 

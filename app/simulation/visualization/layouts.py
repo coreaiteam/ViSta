@@ -141,6 +141,7 @@ from app.service.models import ClusterGroup
 # # Generate clusters
 # initial_clusters = create_clusters(initial_users)
 
+
 main_layout = dbc.Container(
     [
         # Title
@@ -180,10 +181,7 @@ main_layout = dbc.Container(
                                         id="click-mode",
                                         options=[
                                             {"label": "Set Origin", "value": "origin"},
-                                            {
-                                                "label": "Set Destination",
-                                                "value": "destination",
-                                            },
+                                            {"label": "Set Destination", "value": "destination"},
                                         ],
                                         value="origin",
                                         labelStyle={
@@ -191,6 +189,16 @@ main_layout = dbc.Container(
                                             "marginBottom": "5px",
                                         },
                                         className="mb-3",
+                                    ),
+                                    dbc.Button(
+                                        [
+                                            html.I(className="bi bi-x-circle me-2"),
+                                            "Clear Markers",
+                                        ],
+                                        id="clear-markers-btn",
+                                        n_clicks=0,
+                                        color="danger",
+                                        className="w-100",
                                     ),
                                     dbc.Button(
                                         [
@@ -225,9 +233,9 @@ main_layout = dbc.Container(
                             style={"borderRadius": "12px"},
                         ),
                     ],
-                    md=3,  # Narrow column
+                    md=3,  # narrow left column
                 ),
-                # --- Right Column: Map ---
+                # --- Right Column: Map (full height) ---
                 dbc.Col(
                     dbc.Card(
                         dbc.CardBody(
@@ -237,27 +245,38 @@ main_layout = dbc.Container(
                                     id="map-container",
                                     children=map_handler.map,
                                     style={
-                                        "height": "650px",
+                                        "height": "100%",       # take full height
+                                        "minHeight": "100%",    # ensure stretch
                                         "borderRadius": "8px",
                                         "overflow": "hidden",
                                     },
                                 ),
-                            ]
+                            ],
+                            className="h-100",  # stretch card body
                         ),
-                        className="shadow-sm",
+                        className="shadow-sm h-100",  # stretch card
                         style={"borderRadius": "12px"},
                     ),
-                    md=9,  # Wide column for the map
+                    md=9,
+                    className="h-100",  # stretch column
                 ),
             ],
-            className="g-4",  # nice spacing between cols
+            className="g-4",
+            style={"height": "85vh"},  # full row height (adjust as needed)
         ),
+        # Intervals
+
         dcc.Interval(
-            id="cluster-update",
-            interval=5000,  # in milliseconds (1000 ms = 1 second)
+            id="users-refresh-interval",
+            interval=5 * 1000,
             n_intervals=0,
         ),
-        # start at zero)
+        dcc.Interval(
+            id="stats-refresh-interval",
+            interval=1 * 1000,
+            n_intervals=0,
+        ),
     ],
     fluid=True,
+    style={"height": "100vh"},  # make container full screen height
 )
