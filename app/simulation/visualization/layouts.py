@@ -181,7 +181,10 @@ main_layout = dbc.Container(
                                         id="click-mode",
                                         options=[
                                             {"label": "Set Origin", "value": "origin"},
-                                            {"label": "Set Destination", "value": "destination"},
+                                            {
+                                                "label": "Set Destination",
+                                                "value": "destination",
+                                            },
                                         ],
                                         value="origin",
                                         labelStyle={
@@ -209,6 +212,32 @@ main_layout = dbc.Container(
                                         n_clicks=0,
                                         color="success",
                                         className="w-100",
+                                    ),
+                                    html.Div(
+                                        [
+                                            dbc.InputGroup(
+                                                [
+                                                    dbc.Input(
+                                                        id="remove-user-id",
+                                                        type="number",
+                                                        placeholder="Enter User ID",
+                                                        min=1,
+                                                    ),
+                                                    dbc.Button(
+                                                        [
+                                                            html.I(
+                                                                className="bi bi-trash me-2"
+                                                            ),
+                                                            "Remove User",
+                                                        ],
+                                                        id="remove-user-btn",
+                                                        n_clicks=0,
+                                                        color="warning",
+                                                    ),
+                                                ],
+                                                className="mt-3",
+                                            )
+                                        ]
                                     ),
                                 ]
                             ),
@@ -245,8 +274,8 @@ main_layout = dbc.Container(
                                     id="map-container",
                                     children=map_handler.map,
                                     style={
-                                        "height": "100%",       # take full height
-                                        "minHeight": "100%",    # ensure stretch
+                                        "height": "100%",  # take full height
+                                        "minHeight": "100%",  # ensure stretch
                                         "borderRadius": "8px",
                                         "overflow": "hidden",
                                     },
@@ -265,7 +294,6 @@ main_layout = dbc.Container(
             style={"height": "85vh"},  # full row height (adjust as needed)
         ),
         # Intervals
-
         dcc.Interval(
             id="users-refresh-interval",
             interval=5 * 1000,

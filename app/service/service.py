@@ -19,6 +19,7 @@ class ClusteringService:
         self.clustering_interval = clustering_interval
         self.max_workers = max_workers
 
+
         # Initialize components
         self.data_storage = DataStorage()
         self.clustering_engine = ClusteringEngine()
@@ -34,6 +35,10 @@ class ClusteringService:
 
         # Data ingestion
         self.data_ingestors = []
+
+        # UserID generator
+        self.next_user_id = 1
+
 
     def add_data_ingestor(self, ingestor_type: DataSourceType, config: Dict) -> None:
         """Add a data ingestor to the service"""
@@ -169,7 +174,7 @@ class ClusteringService:
 
     def remove_user(self, user_id: int) -> bool:
         """Remove a user from the service"""
-        return self.data_storage.remove_user_from_group(user_id) and self.data_storage.remove_user_location(user_id)
+        return self.data_storage.remove_user_location(user_id)
 
     # Public API methods
     def get_user_group(self, user_id: int) -> Optional[Dict]:
@@ -215,6 +220,13 @@ class ClusteringService:
     def get_all_users(self)-> List[UserLocation]: 
         """Get all active users"""
         return [user.to_dict() for user in self.data_storage.get_all_users()]
+    
+    def get_next_user_id(self)-> int:
+        """Get user id for new user"""
+        user_id = self.next_user_id
+        self.next_user_id += 1
+        return user_id
+
 
 _clustering_service: ClusteringService | None = None
 

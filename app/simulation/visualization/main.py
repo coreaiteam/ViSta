@@ -114,7 +114,8 @@ def add_random_user(n_clicks):
     if not n_clicks:
         raise PreventUpdate
 
-    user_id = len(clustering_service.get_all_users()) + 1
+    user_id = clustering_service.get_next_user_id()
+    
     new_user = loc2userlocation(user_id=user_id, loc=next(data))
     clustering_service.add_user_location(new_user)
 
@@ -127,6 +128,9 @@ def add_random_user(n_clicks):
 @callback(
     Output("users", "children", allow_duplicate=True),
     Output("clusters", "children", allow_duplicate=True),
+    Output("temp-markers", "children", allow_duplicate=True),
+
+
     Input("add-selected-user-btn", "n_clicks"),
     prevent_initial_call=True,
 )
@@ -150,7 +154,7 @@ def add_selected_user(n_clicks):
 
     new_user = UserLocation.from_dict(
         {
-            "user_id": len(clustering_service.get_all_users()) + 1,
+            "user_id": clustering_service.get_next_user_id(),
             "origin_lat": temp_user["origin"][0],
             "origin_lng": temp_user["origin"][1],
             "destination_lat": temp_user["destination"][0],
@@ -166,7 +170,7 @@ def add_selected_user(n_clicks):
     users = clustering_service.get_all_users()
     clusters = clustering_service.get_all_active_groups()
     user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users=users, clusters=clusters)
-    return user_layer, cluster_layer
+    return user_layer, cluster_layer, temp_markers
 
 
 @callback(
@@ -189,7 +193,6 @@ def refresh_map(n_intervals):
     return user_layer, cluster_layer
 
 
-
 @callback(
     Output("temp-markers", "children", allow_duplicate=True),
     Input("clear-markers-btn", "n_clicks"),
@@ -203,7 +206,6 @@ def clear_temp_markers(n_clicks):
     temp_user = {"origin": None, "destination": None}
     temp_markers = []
     return []
-
 
 
 @callback(
@@ -246,6 +248,35 @@ def update_stats(n_intervals):
         ],
         className="g-3",
     )
+
+
+@callback(
+    [
+        Output("users", "children", allow_duplicate=True),
+        Output("clusters", "children", allow_duplicate=True),
+    ],
+    Input("remove-user-btn", "n_clicks"),
+    State("remove-user-id", "value"),
+    prevent_initial_call=True,
+)
+def remove_user(n_clicks, user_id):
+    """
+    Removes a user by user_id and refreshes map
+    """
+    if not user_id:
+        raise PreventUpdate
+
+    print(f"user id : {user_id}")
+    
+    clustering_service.remove_user(user_id)
+
+    # refresh data
+    users = clustering_service.get_all_users()
+    clusters = clustering_service.get_all_active_groups()
+    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users, clusters)
+
+    return user_layer, cluster_layer
+
 
 
 if __name__ == "__main__":
