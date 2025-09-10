@@ -330,7 +330,21 @@ class ClusteringEngine:
 
         # Keep only users that exist in both origin and destination buckets
         return {cid: info for cid, info in candidates.items() if info["orig"] and info["dest"]}
-
+    
+    def _get_coords(self, node_id: int) -> Tuple[float, float]:
+        """
+        Get geographical coordinates for a given node ID.
+        
+        Args:
+            node_id (int): The ID of the node in the graph.
+            
+        Returns:
+            Tuple[float, float]: (latitude, longitude) coordinates of the node.
+        """
+        if node_id in self.G.nodes:
+            node_data = self.G.nodes[node_id]
+            return (np.float64(node_data['y']), np.float64(node_data['x']))  # (latitude, longitude)
+    
     def _form_group(
         self,
         main_user: User,
@@ -379,7 +393,6 @@ class ClusteringEngine:
 
             total_dist = min_orig_dist + min_dest_dist
 
-            print(math.exp(-total_dist / 1000), threshold)
             if math.exp(-total_dist / 1000) >= threshold:
                 scored_candidates.append(
                     (cand_id, info["user_ids"], total_dist, best_orig_bucket, best_dest_bucket)
@@ -402,12 +415,12 @@ class ClusteringEngine:
             group = InternalClusterGroup(
                 users=[u.user_location for u in members],
                 created_at=datetime.now(timezone.utc),
-                meeting_point_origin=selected[3],
-                meeting_point_destination=selected[4],
             )
             members[1].update_group(group=group)
 
         main_user.update_group(group=group)
+        group.meeting_point_origin = self._get_coords(selected[3])  # todo
+        group.meeting_point_destination = self._get_coords(selected[4]) # todo
 
         # --- update bucket structures ---
         if group.is_complete:
@@ -463,7 +476,7 @@ class ClusteringEngine:
         return new_user
 
     def _add_user_to_buckets(self, user: User):
-        """Add a user to their corresponding LSH buckets."""
+        """Add a user to their corresponding buckets."""
         for b, dist in user.orig_buckets.items():
             self.orig_buckets[b][user.user_id] = ([user.user_id], dist)
         for b, dist in user.dest_buckets.items():
@@ -519,7 +532,6 @@ class ClusteringEngine:
         dest_user_buckets, dest_node = self._get_nearest_nodes(user_location.destination_coords)
 
         candidate_users = self._collect_candidate_users(orig_user_buckets, dest_user_buckets)
-        print("lsh2: ", "candidate_users=", [u for u in candidate_users.keys()])
 
         user = self._create_user(
             user_location,
@@ -531,8 +543,6 @@ class ClusteringEngine:
         group = self._form_group(user, candidate_users)
         if not group:
             self._add_user_to_buckets(user)
-        else:
-            print("lsh2: ", [u.user_id for u in group.users])
 
         return group
 
