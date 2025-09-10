@@ -496,7 +496,7 @@ class ClusteringEngine:
         Returns:
             Optional[InternalClusterGroup]: The formed group, or None if no group formed.
         """
-        near_users: List[Tuple[User, int]] = []
+        near_users: List[Tuple[User, float]] = []
 
         for candid_id in candidate_users:
             candid = self.users[candid_id]
