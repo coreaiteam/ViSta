@@ -213,3 +213,4 @@ rideshare.db
 cache/
 *.pkl
 savojbolagh.json
+geoBoundaries-IRN-ADM4_simplified.geojson
