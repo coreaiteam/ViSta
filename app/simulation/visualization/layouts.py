@@ -37,6 +37,33 @@ main_layout = dbc.Container(
                                         color="primary",
                                         className="mb-3 w-100",
                                     ),
+                                    dbc.InputGroup(
+                                        [
+                                            dbc.Input(
+                                                id="bulk-user-count",
+                                                type="number",
+                                                min=1,
+                                                step=1,
+                                                placeholder="Number of users",
+                                            ),
+                                            dbc.Button(
+                                                [
+                                                    html.I(
+                                                        className="bi bi-people-fill me-2"
+                                                    ),
+                                                    "Add Multiple Users",
+                                                ],
+                                                id="add-multiple-users-btn",
+                                                n_clicks=0,
+                                                color="info",
+                                            ),
+                                        ],
+                                        className="mb-3",
+                                    ),
+                                    html.Div(
+                                        id="bulk-user-info",
+                                        className="text-muted small mb-3",
+                                    ),
                                     html.Label(
                                         "Click Mode:", className="text-light fw-bold"
                                     ),

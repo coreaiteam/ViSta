@@ -21,6 +21,8 @@ clustering_service.start()
 
 # User Generator
 data = iter(generate_data())
+num_all_data = len(list(generate_data()))   # همه داده‌ها
+
 
 ## Temparary User
 temp_user = {"origin": None, "destination": None}
@@ -98,6 +100,8 @@ def capture_map_click(click_data, click_mode):
 @callback(
     Output("users", "children", allow_duplicate=True),
     Output("clusters", "children", allow_duplicate=True),
+    Output("bulk-user-info", "children", allow_duplicate=True),
+
     Input("add-random-user-btn", "n_clicks"),
     prevent_initial_call=True,
 )
@@ -122,7 +126,12 @@ def add_random_user(n_clicks):
     users = clustering_service.get_all_users()
     clusters = clustering_service.get_all_active_groups()
     userlayer, cluster_layer =  map_handler.create_users_and_clusters_layer(users=users, clusters=clusters)
-    return userlayer, cluster_layer
+
+    global num_all_data
+    num_all_data -= 1
+    info_text = f"Remaining number of users: {num_all_data}"
+
+    return userlayer, cluster_layer, info_text
 
 
 @callback(
@@ -276,6 +285,43 @@ def remove_user(n_clicks, user_id):
     user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users, clusters)
 
     return user_layer, cluster_layer
+
+
+
+@callback(
+    [
+        Output("users", "children", allow_duplicate=True),
+        Output("clusters", "children", allow_duplicate=True),
+        Output("bulk-user-info", "children"),
+    ],
+    Input("add-multiple-users-btn", "n_clicks"),
+    State("bulk-user-count", "value"),
+    prevent_initial_call=True,
+)
+def add_multiple_users(n_clicks, count):
+    """
+    Add multiple random users at once.
+    """
+    if not n_clicks or not count or count <= 0:
+        raise PreventUpdate
+    global num_all_data
+    users_added = 0
+
+    for _ in range(count):
+
+        user_id = clustering_service.get_next_user_id()
+        new_user = loc2userlocation(user_id=user_id, loc=next(data))
+        clustering_service.add_user_location(new_user)
+        users_added += 1
+
+    # refresh data
+    users = clustering_service.get_all_users()
+    clusters = clustering_service.get_all_active_groups()
+    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users, clusters)
+    num_all_data -= users_added
+    info_text = f"Remaining number of users: {num_all_data}"
+
+    return user_layer, cluster_layer, info_text
 
 
 
