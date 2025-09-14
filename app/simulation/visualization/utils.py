@@ -52,7 +52,26 @@ def generate_random_users(
 
 
 
-def generate_data():
+# def generate_data():
+#     graph = ox.graph_from_place(PLACE, network_type='walk')
+
+#     pipeline = OSMTestDataPipeline(
+#         graph,
+#         storage_path="savojbolagh.json",
+#         num_main_points=3,
+#         neighbors_k=20,
+#         sample_size=20,
+#         max_walk_dist=200,
+#         seed=42
+#     )
+
+#     pipeline.prepare(force_recompute=True)
+#     dataset = pipeline.get_dataset()
+
+#     return dataset
+
+# Modified to return graph as well for calculating metrics
+def generate_data(return_graph: bool = False):
     graph = ox.graph_from_place(PLACE, network_type='walk')
 
     pipeline = OSMTestDataPipeline(
@@ -67,9 +86,11 @@ def generate_data():
 
     pipeline.prepare(force_recompute=True)
     dataset = pipeline.get_dataset()
-
-    return dataset
-
+    
+    if return_graph:
+        return dataset, graph  # Return both dataset and graph
+    else:
+        return dataset
 
 
 def loc2userlocation(user_id, loc):

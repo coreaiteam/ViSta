@@ -83,170 +83,205 @@ class ClusterMetrics:
             'computation_time': self.computation_time,
             'alpha_weight': self.alpha
         }
-
 # class OSMnxDistanceCalculator:
-#     """Handles OSMnx graph operations and distance calculations for both origin and destination"""
+#     """Handles OSMnx graph operations and distance calculations"""
     
 #     def __init__(self, network_type='walk'):
 #         self.network_type = network_type
-#         self.origin_graph = None
-#         self.destination_graph = None
-#         self.origin_graph_center = None
-#         self.destination_graph_center = None
+#         self.graph = None
     
-#     def initialize_graph(self, user_locations: List[UserLocation], buffer_dist=2000):
-#         """Initialize OSMnx graphs for both origin and destination areas"""
+#     def initialize_graph(self, points: List[Any], buffer_dist=10000):  # Increased buffer
+#         """Initialize OSMnx graph for the area covering all points"""
 #         try:
-#             # Get bounding boxes for origins and destinations
-#             origin_lats = [user.origin_lat for user in user_locations]
-#             origin_lngs = [user.origin_lng for user in user_locations]
-#             dest_lats = [user.destination_lat for user in user_locations]
-#             dest_lngs = [user.destination_lng for user in user_locations]
+#             # Get all coordinates (both origins and destinations)
+#             all_coords = []
+#             for point in points:
+#                 if hasattr(point, 'origin_lat') and hasattr(point, 'origin_lng'):
+#                     all_coords.append((point.origin_lat, point.origin_lng))
+#                 if hasattr(point, 'destination_lat') and hasattr(point, 'destination_lng'):
+#                     all_coords.append((point.destination_lat, point.destination_lng))
             
-#             # Origin graph
-#             origin_north, origin_south = max(origin_lats), min(origin_lats)
-#             origin_east, origin_west = max(origin_lngs), min(origin_lngs)
-#             self.origin_graph_center = ((origin_north + origin_south) / 2, (origin_east + origin_west) / 2)
+#             if not all_coords:
+#                 raise ValueError("No coordinates found in points")
             
-#             logger.info(f"Downloading OSMnx graph for origins at {self.origin_graph_center}")
-#             self.origin_graph = ox.graph_from_point(
-#                 self.origin_graph_center, 
+#             lats, lngs = zip(*all_coords)
+#             center_lat, center_lng = np.mean(lats), np.mean(lngs)
+            
+#             logger.info(f"Downloading OSMnx graph for center ({center_lat:.6f}, {center_lng:.6f}) with radius {buffer_dist}m")
+            
+#             # Download graph - use a larger area to ensure coverage
+#             self.graph = ox.graph_from_point(
+#                 (center_lat, center_lng), 
 #                 dist=buffer_dist, 
 #                 network_type=self.network_type,
 #                 simplify=True
 #             )
-#             self.origin_graph = ox.project_graph(self.origin_graph)
             
-#             # Destination graph
-#             dest_north, dest_south = max(dest_lats), min(dest_lats)
-#             dest_east, dest_west = max(dest_lngs), min(dest_lngs)
-#             self.destination_graph_center = ((dest_north + dest_south) / 2, (dest_east + dest_west) / 2)
-            
-#             logger.info(f"Downloading OSMnx graph for destinations at {self.destination_graph_center}")
-#             self.destination_graph = ox.graph_from_point(
-#                 self.destination_graph_center, 
-#                 dist=buffer_dist, 
-#                 network_type=self.network_type,
-#                 simplify=True
-#             )
-#             self.destination_graph = ox.project_graph(self.destination_graph)
-            
-#             logger.info(f"Graphs initialized: origins={len(self.origin_graph.nodes())} nodes, destinations={len(self.destination_graph.nodes())} nodes")
+#             # Project graph
+#             self.graph = ox.project_graph(self.graph)
+#             logger.info(f"Graph initialized with {len(self.graph.nodes())} nodes and {len(self.graph.edges())} edges")
             
 #         except Exception as e:
-#             logger.error(f"Failed to initialize OSMnx graphs: {e}")
-#             raise
+#             logger.error(f"Failed to initialize OSMnx graph: {e}")
+#             # Fallback to great circle distance
+#             logger.warning("Using great circle distance as fallback")
     
 #     def get_walking_distance(self, lat1: float, lng1: float, lat2: float, lng2: float, point_type: str = 'origin') -> float:
-#         """Get walking distance between two points using appropriate graph"""
+#         """Get walking distance between two points with proper debugging"""
 #         try:
-#             graph = self.origin_graph if point_type == 'origin' else self.destination_graph
+#             # First check if points are the same
+#             if lat1 == lat2 and lng1 == lng2:
+#                 return 0.0
             
-#             if graph is None:
-#                 raise ValueError(f"OSMnx graph for {point_type} not initialized")
+#             # If graph is not available, use great circle distance
+#             if self.graph is None:
+#                 distance_meters = great_circle((lat1, lng1), (lat2, lng2)).meters
+#                 logger.debug(f"Using great circle distance: {distance_meters:.2f}m")
+#                 return distance_meters
             
-#             # Get nearest nodes using Dijkstra algorithm
+#             # OSMnx expects (lat, lng) but nearest_nodes expects (lng, lat)
+#             # This is the critical fix!
 #             point1 = (lat1, lng1)
 #             point2 = (lat2, lng2)
             
-#             node1 = ox.distance.nearest_nodes(graph, lng1, lat1)
-#             node2 = ox.distance.nearest_nodes(graph, lng2, lat2)
+#             # Get nearest nodes - OSMnx uses (lng, lat) order!
+#             try:
+#                 node1 = ox.distance.nearest_nodes(self.graph, lng1, lat1)  # (lng, lat)
+#                 node2 = ox.distance.nearest_nodes(self.graph, lng2, lat2)  # (lng, lat)
+#             except Exception as e:
+#                 logger.warning(f"Nearest nodes failed: {e}, using great circle")
+#                 return great_circle(point1, point2).meters
             
-#             # Calculate shortest path distance using Dijkstra
-#             distance_meters = nx.shortest_path_length(
-#                 graph, 
-#                 node1, 
-#                 node2, 
-#                 weight='length'
-#             )
+#             # Check if nodes are the same (points are very close)
+#             if node1 == node2:
+#                 distance_meters = great_circle(point1, point2).meters
+#                 logger.debug(f"Same node, using great circle: {distance_meters:.2f}m")
+#                 return distance_meters
             
-#             return distance_meters
-            
-#         except (nx.NetworkXNoPath, nx.NodeNotFound):
-#             # Fallback to great circle distance
-#             fallback_dist = great_circle((lat1, lng1), (lat2, lng2)).meters
-#             logger.warning(f"No path found for {point_type}, using great circle: {fallback_dist:.0f}m")
-#             return fallback_dist
-            
+#             # Calculate shortest path distance
+#             try:
+#                 distance_meters = nx.shortest_path_length(
+#                     self.graph, 
+#                     node1, 
+#                     node2, 
+#                     weight='length'
+#                 )
+#                 logger.debug(f"OSMnx distance: {distance_meters:.2f}m between {point1} and {point2}")
+#                 return distance_meters
+                
+#             except (nx.NetworkXNoPath, nx.NodeNotFound):
+#                 # Fallback to great circle distance if no path found
+#                 distance_meters = great_circle(point1, point2).meters
+#                 logger.warning(f"No path found between {point1} and {point2}, using great circle: {distance_meters:.0f}m")
+#                 return distance_meters
+                
 #         except Exception as e:
-#             logger.error(f"Error calculating {point_type} distance: {e}")
+#             logger.error(f"Error calculating walking distance between ({lat1}, {lng1}) and ({lat2}, {lng2}): {e}")
+#             # Fallback to great circle distance
 #             return great_circle((lat1, lng1), (lat2, lng2)).meters
-
-# metrics.py - Fixed OSMnxDistanceCalculator class
 class OSMnxDistanceCalculator:
-    """Handles OSMnx graph operations and distance calculations"""
+    """Handles OSMnx distance calculations with flexible graph initialization"""
     
-    def __init__(self, network_type='walk'):
+    def __init__(self, graph: Optional[nx.MultiDiGraph] = None, 
+                 network_type: str = 'walk',
+                 place_name: Optional[str] = None):
+        """
+        Initialize OSMnx distance calculator
+        
+        Args:
+            graph: Pre-loaded OSMnx graph (optional)
+            network_type: Type of network ('walk', 'drive', etc.)
+            place_name: Place name to download graph if not provided
+        """
         self.network_type = network_type
-        self.graph = None
+        self.place_name = place_name
+        self.graph = graph
+        
+        # Initialize graph if not provided
+        if self.graph is None:
+            self._initialize_graph_from_place()
+        else:
+            self._validate_and_prepare_graph()
+        
+        logger.info(f"OSMnx calculator initialized with {len(self.graph.nodes())} nodes and {len(self.graph.edges())} edges")
     
-    def initialize_graph(self, points: List[Any], buffer_dist=10000):  # Increased buffer
-        """Initialize OSMnx graph for the area covering all points"""
+    def _initialize_graph_from_place(self):
+        """Initialize graph by downloading from OSMnx"""
+        if not self.place_name:
+            raise ValueError("Either graph or place_name must be provided")
+        
         try:
-            # Get all coordinates (both origins and destinations)
-            all_coords = []
-            for point in points:
-                if hasattr(point, 'origin_lat') and hasattr(point, 'origin_lng'):
-                    all_coords.append((point.origin_lat, point.origin_lng))
-                if hasattr(point, 'destination_lat') and hasattr(point, 'destination_lng'):
-                    all_coords.append((point.destination_lat, point.destination_lng))
-            
-            if not all_coords:
-                raise ValueError("No coordinates found in points")
-            
-            lats, lngs = zip(*all_coords)
-            center_lat, center_lng = np.mean(lats), np.mean(lngs)
-            
-            logger.info(f"Downloading OSMnx graph for center ({center_lat:.6f}, {center_lng:.6f}) with radius {buffer_dist}m")
-            
-            # Download graph - use a larger area to ensure coverage
-            self.graph = ox.graph_from_point(
-                (center_lat, center_lng), 
-                dist=buffer_dist, 
+            logger.info(f"Downloading OSMnx graph for: {self.place_name}")
+            self.graph = ox.graph_from_place(
+                self.place_name, 
                 network_type=self.network_type,
                 simplify=True
             )
-            
-            # Project graph
             self.graph = ox.project_graph(self.graph)
-            logger.info(f"Graph initialized with {len(self.graph.nodes())} nodes and {len(self.graph.edges())} edges")
+            logger.info(f"Graph downloaded with {len(self.graph.nodes())} nodes")
             
         except Exception as e:
-            logger.error(f"Failed to initialize OSMnx graph: {e}")
-            # Fallback to great circle distance
-            logger.warning("Using great circle distance as fallback")
+            logger.error(f"Failed to download graph: {e}")
+            raise
+    
+    def _validate_and_prepare_graph(self):
+        """Validate and prepare the provided graph"""
+        if self.graph is None:
+            raise ValueError("Graph cannot be None")
+        
+        # Check if graph has CRS information
+        if not hasattr(self.graph, 'graph') or 'crs' not in self.graph.graph:
+            logger.warning("Graph missing CRS information, attempting to project")
+            try:
+                self.graph = ox.project_graph(self.graph)
+                logger.info("Graph was successfully projected")
+            except Exception as e:
+                logger.error(f"Failed to project graph: {e}")
+                raise
+        
+        # Alternative method to check if graph is projected
+        try:
+            # Try to get a sample node to check coordinates
+            sample_node = next(iter(self.graph.nodes()))
+            sample_data = self.graph.nodes[sample_node]
+            x, y = sample_data.get('x', 0), sample_data.get('y', 0)
+            
+            # If coordinates are in reasonable range, assume projected
+            # (Projected coordinates are usually large numbers like meters)
+            if abs(x) < 180 and abs(y) < 90:
+                logger.info("Graph appears to be in geographic coordinates (lat/lng), projecting...")
+                self.graph = ox.project_graph(self.graph)
+            else:
+                logger.info("Graph appears to be already projected")
+                
+        except Exception as e:
+            logger.warning(f"Could not determine projection status: {e}")
+            # Try to project anyway
+            try:
+                self.graph = ox.project_graph(self.graph)
+                logger.info("Graph was projected as fallback")
+            except Exception as e:
+                logger.error(f"Failed to project graph: {e}")
+                raise
     
     def get_walking_distance(self, lat1: float, lng1: float, lat2: float, lng2: float, point_type: str = 'origin') -> float:
-        """Get walking distance between two points with proper debugging"""
+        """Get walking distance between two points using the graph"""
         try:
             # First check if points are the same
-            if lat1 == lat2 and lng1 == lng2:
+            if abs(lat1 - lat2) < 1e-6 and abs(lng1 - lng2) < 1e-6:
                 return 0.0
-            
-            # If graph is not available, use great circle distance
-            if self.graph is None:
-                distance_meters = great_circle((lat1, lng1), (lat2, lng2)).meters
-                logger.debug(f"Using great circle distance: {distance_meters:.2f}m")
-                return distance_meters
-            
-            # OSMnx expects (lat, lng) but nearest_nodes expects (lng, lat)
-            # This is the critical fix!
-            point1 = (lat1, lng1)
-            point2 = (lat2, lng2)
             
             # Get nearest nodes - OSMnx uses (lng, lat) order!
             try:
-                node1 = ox.distance.nearest_nodes(self.graph, lng1, lat1)  # (lng, lat)
-                node2 = ox.distance.nearest_nodes(self.graph, lng2, lat2)  # (lng, lat)
+                node1 = ox.distance.nearest_nodes(self.graph, lng1, lat1)
+                node2 = ox.distance.nearest_nodes(self.graph, lng2, lat2)
             except Exception as e:
                 logger.warning(f"Nearest nodes failed: {e}, using great circle")
-                return great_circle(point1, point2).meters
+                return great_circle((lat1, lng1), (lat2, lng2)).meters
             
             # Check if nodes are the same (points are very close)
             if node1 == node2:
-                distance_meters = great_circle(point1, point2).meters
-                logger.debug(f"Same node, using great circle: {distance_meters:.2f}m")
-                return distance_meters
+                return great_circle((lat1, lng1), (lat2, lng2)).meters
             
             # Calculate shortest path distance
             try:
@@ -256,49 +291,57 @@ class OSMnxDistanceCalculator:
                     node2, 
                     weight='length'
                 )
-                logger.debug(f"OSMnx distance: {distance_meters:.2f}m between {point1} and {point2}")
                 return distance_meters
                 
             except (nx.NetworkXNoPath, nx.NodeNotFound):
                 # Fallback to great circle distance if no path found
-                distance_meters = great_circle(point1, point2).meters
-                logger.warning(f"No path found between {point1} and {point2}, using great circle: {distance_meters:.0f}m")
-                return distance_meters
+                return great_circle((lat1, lng1), (lat2, lng2)).meters
                 
         except Exception as e:
-            logger.error(f"Error calculating walking distance between ({lat1}, {lng1}) and ({lat2}, {lng2}): {e}")
-            # Fallback to great circle distance
+            logger.error(f"Error calculating walking distance: {e}")
             return great_circle((lat1, lng1), (lat2, lng2)).meters
-
 class ClusterEvaluator:
-    """Main class for evaluating clustering performance with origin-destination integration"""
+    """Main class for evaluating clustering performance"""
     
-    def __init__(self, user_locations: List[UserLocation], clusters: List[List[UserLocation]], alpha: float = 1.0, centroid_method: str = "optimal"):
+    def __init__(self, user_locations: List[Any], clusters: List[List[Any]], 
+                 alpha: float = 1.0, 
+                 centroid_method: str = "medoid",
+                 graph: Optional[nx.MultiDiGraph] = None,
+                 place_name: Optional[str] = None):
         """
-        Initialize evaluator with origin-destination integration
+        Initialize evaluator with flexible graph handling
         
         Args:
             user_locations: Complete list of all UserLocation objects
             clusters: List of clusters, each cluster is a list of UserLocation objects
-            alpha: Weight for destination metrics in combined scores (default: 1.0)
+            alpha: Weight for destination metrics in combined scores
+            centroid_method: Method for finding centroids
+            graph: Pre-loaded OSMnx graph (optional)
+            place_name: Place name to download graph if not provided
         """
         self.start_time = time.time()
         self.user_locations = user_locations
         self.clusters = clusters
         self.alpha = alpha
+        self.centroid_method = centroid_method
         self.unique_labels = list(range(len(clusters)))
-        self.centroid_method = centroid_method  # "optimal", "approximate", or "medoid"
         
-        # Initialize OSMnx distance calculator for both origin and destination
-        self.distance_calculator = OSMnxDistanceCalculator()
-        self.distance_calculator.initialize_graph(user_locations)
+        # Initialize OSMnx distance calculator
+        self.distance_calculator = OSMnxDistanceCalculator(
+            graph=graph,
+            network_type='walk',
+            place_name=place_name
+        )
         
         # Create mapping and labels
         self.user_to_cluster, self.labels = self._create_label_mapping()
         self.cluster_indices = self._group_indices_by_cluster()
         
         # Compute distance matrices for both origin and destination
+        logger.info("Computing origin distance matrix...")
         self.origin_distance_matrix = self._compute_distance_matrix('origin')
+        
+        logger.info("Computing destination distance matrix...")
         self.destination_distance_matrix = self._compute_distance_matrix('destination')
         # print(f'\n origin_distance_matrix = {self.origin_distance_matrix}')
         # print(f'\n destination_distance_matrix = {self.destination_distance_matrix}')
@@ -727,20 +770,32 @@ class ClusterEvaluator:
         )
 
 # Main function for easy access
-def evaluate_user_clustering(user_locations: List[UserLocation], 
-                           clusters: List[List[UserLocation]],
-                           alpha: float = 1.0, 
-                           centroid_method: str = "optimal") -> ClusterMetrics:
+def evaluate_user_clustering(user_locations: List[Any], 
+                           clusters: List[List[Any]],
+                           alpha: float = 1.0,
+                           centroid_method: str = "medoid",
+                           graph: Optional[nx.MultiDiGraph] = None,
+                           place_name: Optional[str] = "Savojbolagh County, Alborz Province, Iran") -> ClusterMetrics:
     """
-    Evaluate clustering with origin-destination integration
+    Evaluate clustering with flexible graph handling
     
     Args:
         user_locations: Complete list of all UserLocation objects
         clusters: List of clusters, each cluster is a list of UserLocation objects
         alpha: Weight for destination metrics in combined scores
+        centroid_method: Method for finding centroids
+        graph: Pre-loaded OSMnx graph (optional)
+        place_name: Place name to download graph if not provided
     
     Returns:
         Comprehensive clustering metrics
     """
-    evaluator = ClusterEvaluator(user_locations, clusters, alpha, centroid_method)
+    evaluator = ClusterEvaluator(
+        user_locations=user_locations,
+        clusters=clusters,
+        alpha=alpha,
+        centroid_method=centroid_method,
+        graph=graph,
+        place_name=place_name
+    )
     return evaluator.evaluate()
