@@ -1,22 +1,77 @@
 from typing import List, Dict
+import threading
+import time
 
 from .models import UserLocation
 from .matching_engine import InterCityMatcher
 
 
-class RideSharingSystem:
-    def __init__(self):
+class InterCityRideSharingSystem:
+    """
+    Ride sharing system that stores users, performs background matching,
+    and provides access to the latest results.
+    """
+
+    def __init__(self, refresh_interval: int = 5):
+        """
+        Initialize the ride sharing system.
+        """
         self.users_by_city: Dict[str, List[UserLocation]] = {}
+        self.match_results: Dict[str, List[List["UserLocation"]]] = {}
+        self.refresh_interval = refresh_interval
+
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
 
     def add_user(self, user: UserLocation):
-        if user.origin_city not in self.users_by_city:
-            self.users_by_city[user.origin_city] = []
-        self.users_by_city[user.origin_city].append(user)
+        """
+        Add a new user to the system.
+        """
+        with self._lock:
+            if user.origin_city not in self.users_by_city:
+                self.users_by_city[user.origin_city] = []
+            self.users_by_city[user.origin_city].append(user)
 
     def match_all(self) -> Dict[str, List[List["UserLocation"]]]:
-        """Run matching per city"""
-        results: Dict[str, List[List["UserLocation"]]] = {}
+        """
+        Run the matching algorithm for all users grouped by city.
+        """
         matcher = InterCityMatcher()
-        for city, users in self.users_by_city.items():
-            results[city] = matcher.match_users_in_city(users)
+        results: Dict[str, List[List["UserLocation"]]] = {}
+        with self._lock:
+            for city, users in self.users_by_city.items():
+                results[city] = matcher.match_users_in_city(users)
         return results
+
+    def _background_matching(self):
+        """Background thread that updates matching results periodically."""
+        while not self._stop_event.is_set():
+            self.match_results = self.match_all()
+            time.sleep(self.refresh_interval)
+
+    def start(self):
+        """
+        Start the background matching service.
+        """
+        if self._thread and self._thread.is_alive():
+            return  # already running
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._background_matching, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """
+        Stop the background matching service.
+        """
+        if not self._thread:
+            return
+        self._stop_event.set()
+        self._thread.join()
+        self._thread = None
+
+    def get_results(self) -> Dict[str, List[List["UserLocation"]]]:
+        """
+        Get the latest matching results from the background service.
+        """
+        return self.match_results
