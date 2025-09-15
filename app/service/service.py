@@ -5,9 +5,10 @@ from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor
 from .data_ingestion import DataIngestionFactory, DataSourceType
 from .data_storage import DataStorage
-from .engine.mips_engine import ClusteringEngine
+from .engine.MPBucketingEngine import ClusteringEngine
 from .output_handlers import OutputHandlerFactory, OutputHandler
 from .models import OutputMessage, UserLocation
+from ..config import PLACE
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class ClusteringService:
 
         # Initialize components
         self.data_storage = DataStorage()
-        self.clustering_engine = ClusteringEngine()
+        self.clustering_engine = ClusteringEngine(place=PLACE)
         self.output_handlers: List[OutputHandler] = []
 
         # Threading

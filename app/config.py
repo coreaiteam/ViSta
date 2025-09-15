@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
 
 
+PLACE = "Tehran Province, Iran"
+
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./rideshare.db"
     SECRET_KEY: str = "your-secret-key-here"  # Change in production

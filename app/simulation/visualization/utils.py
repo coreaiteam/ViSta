@@ -7,8 +7,8 @@ import osmnx as ox
 from app.service.models import UserLocation
 from app.simulation.generator import OSMTestDataPipeline
 
+from ...config import PLACE
 
-PLACE = "Savojbolagh County, Alborz Province, Iran"
 
 def generate_random_users(
     n: int,

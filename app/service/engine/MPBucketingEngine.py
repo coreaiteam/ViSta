@@ -12,13 +12,6 @@ import uuid
 import math
 from ..models import UserLocation, ClusterGroup
 
-
-# Define the geographical area for the street network graph
-place = "Savojbolagh County, Alborz Province, Iran"
-# Load the walkable street network graph from OpenStreetMap
-G = ox.graph_from_place(place, network_type='walk')
-
-
 @dataclass
 class InternalClusterGroup:
     """A dataclass to represent a group of users clustered together."""
@@ -170,7 +163,7 @@ class ClusteringEngine:
 
     def __init__(self, place: str = "Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran",
                  k_nearest: int = 100, similarity_threshold: float = 0.5,
-                 cache_file: str = "signatures.pkl"):
+                ):
         """
         Initialize the clustering engine with geographical and clustering parameters.
 
@@ -183,7 +176,7 @@ class ClusteringEngine:
         self.place = place
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold
-        self.cache_file = cache_file
+        self.cache_file = self.place.replace(", ", "-").replace(" ", "_") + ".pkl"
         self.G = None  # Street network graph
         self.nodes_list = None  # List of graph nodes
         self.node_to_idx = None  # Mapping of nodes to indices
