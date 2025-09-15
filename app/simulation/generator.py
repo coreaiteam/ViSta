@@ -7,22 +7,6 @@ from sklearn.neighbors import BallTree
 import numpy as np
 
 
-data = [
-    {
-        'origin': [35.97897, 50.73145],
-        'dest': [35.962546, 50.678285]
-    },
-    {
-        'origin': [35.98123, 50.74567],
-        'dest': [35.98368, 50.74327]
-    },
-    {
-        'origin': [35.962468, 50.688440],
-        'dest': [35.958855, 50.672861]
-    }
-]
-
-
 # =========================
 #   Data Generator Class
 # =========================
@@ -40,9 +24,12 @@ class OSMDataGenerator:
         sample_size: int = 20,
         max_walk_dist: int = 500,
         seed: int = 42,
+        use_predefined_points: bool = False,  # New parameter
+        predefined_data: List[dict] = None   # New parameter
     ):
         self.graph = graph
-        self.lookup_data = data
+        self.use_predefined_points = use_predefined_points
+        self.predefined_data = predefined_data if predefined_data else []
         self.num_main_points = num_main_points
         self.neighbors_k = neighbors_k
         self.sample_size = sample_size
@@ -71,19 +58,28 @@ class OSMDataGenerator:
         self.coords_rad = np.radians(coords)
         self.balltree = BallTree(self.coords_rad, metric="haversine")
 
+    def _get_random_node(self) -> int:
+        """
+        Pick a random node from the graph.
+        """
+        return self.random.choice(self.node_ids)
+
     def _get_main_node(self, node_type: str = "origin", i: int = 0) -> int:
         """
-        Pick a node from the lookup table based on lat/lon coordinates.
+        Pick a node from predefined data or random node.
         """
-        entry = data[i]
-
-        if node_type == "origin":
-            target_lat, target_lon = entry["origin"]
+        if self.use_predefined_points and i < len(self.predefined_data):
+            entry = self.predefined_data[i]
+            if node_type == "origin":
+                target_lat, target_lon = entry["origin"]
+            else:
+                target_lat, target_lon = entry["dest"]
+            
+            closest_node = self._find_closest_node(target_lat, target_lon)
+            return closest_node
         else:
-            target_lat, target_lon = entry["dest"]
-
-        closest_node = self._find_closest_node(target_lat, target_lon)
-        return closest_node
+            # Generate random node if no predefined data available
+            return self._get_random_node()
 
     def _find_closest_node(self, target_lat: float, target_lon: float) -> int:
         """
@@ -121,6 +117,7 @@ class OSMDataGenerator:
         data = []
         used_origins = set()
         used_dests = set()
+        
         for i in range(self.num_main_points):
             origin = self._get_main_node('origin', i)
             dest = self._get_main_node('dest', i)
@@ -144,9 +141,9 @@ class OSMDataGenerator:
 
             num_pairs = min(self.sample_size, len(
                 available_origins), len(available_dests))
-            for i in range(num_pairs):
-                o = available_origins[i]
-                d = available_dests[i]
+            for j in range(num_pairs):
+                o = available_origins[j]
+                d = available_dests[j]
                 used_origins.add(o)
                 used_dests.add(d)
                 lat_o, lon_o = self._node_to_latlon(o)
@@ -209,8 +206,13 @@ class OSMTestDataPipeline:
     High-level API combining Generator, Storage, and Dataset.
     """
 
-    def __init__(self, graph, storage_path="osm_data.json", **gen_params):
-        self.generator = OSMDataGenerator(graph, **gen_params)
+    def __init__(self, graph, storage_path="osm_data.json", use_predefined_points=False, predefined_data=None, **gen_params):
+        self.generator = OSMDataGenerator(
+            graph, 
+            use_predefined_points=use_predefined_points,
+            predefined_data=predefined_data,
+            **gen_params
+        )
         self.storage = DataStorage(storage_path)
         self.dataset: Optional[OSMDataset] = None
 
