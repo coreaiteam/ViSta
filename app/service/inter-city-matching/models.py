@@ -8,6 +8,7 @@ class UserStatus(Enum):
     MATCHED = "matched"
     CANCELLED = "cancelled"
 
+
 @dataclass
 class UserLocation:
     user_id: int
