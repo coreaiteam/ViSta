@@ -12,13 +12,14 @@ class InterCityRideSharingSystem:
     and provides access to the latest results.
     """
 
-    def __init__(self, refresh_interval: int = 5):
+    def __init__(self, matching_engine: InterCityMatcher, refresh_interval: int = 5):
         """
         Initialize the ride sharing system.
         """
         self.users_by_city: Dict[str, List[UserLocation]] = {}
-        self.match_results: Dict[str, List[List["UserLocation"]]] = {}
+        self.match_results: Dict[str, List[List[UserLocation]]] = {}
         self.refresh_interval = refresh_interval
+        self.matching_engine = matching_engine
 
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -33,15 +34,14 @@ class InterCityRideSharingSystem:
                 self.users_by_city[user.origin_city] = []
             self.users_by_city[user.origin_city].append(user)
 
-    def match_all(self) -> Dict[str, List[List["UserLocation"]]]:
+    def match_all(self) -> Dict[str, List[List[UserLocation]]]:
         """
         Run the matching algorithm for all users grouped by city.
         """
-        matcher = InterCityMatcher()
-        results: Dict[str, List[List["UserLocation"]]] = {}
+        results: Dict[str, List[List[UserLocation]]] = {}
         with self._lock:
             for city, users in self.users_by_city.items():
-                results[city] = matcher.match_users_in_city(users)
+                results[city] = self.matching_engine.match_users_in_city(users)
         return results
 
     def _background_matching(self):
@@ -75,3 +75,4 @@ class InterCityRideSharingSystem:
         Get the latest matching results from the background service.
         """
         return self.match_results
+    

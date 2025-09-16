@@ -1,12 +1,9 @@
-from datetime import datetime
-
-from .models import UserLocation
-from .matching_service import RideSharingSystem
-from .utils import get_location_info, build_users
 import asyncio
-
-
 import time
+
+from .matching_service import InterCityRideSharingSystem
+from .matching_engine import InterCityMatcher
+from .utils import build_users
 # --- Sample dataset (cities filled by geocoder) ---
 
 start = time.time()
@@ -73,8 +70,11 @@ users = asyncio.run(build_users())
 
 
 print(f"Time spent: {time.time() - start}")
+
+
 # --- Run the system ---
-system = RideSharingSystem()
+matcher = InterCityMatcher()
+system = InterCityRideSharingSystem(matching_engine=matcher)
 for u in users:
     print(f"User {u.user_id} origin={u.origin_city}, destination={u.destination_city}")
     system.add_user(u)
