@@ -152,7 +152,7 @@ class OSMDataGenerator:
                 data.append((lat_o, lon_o, lat_d, lon_d))
             
             cnt += num_pairs
-            if cnt % 100 == 0:
+            if i % (self.num_main_points//10) == 0:
                 print(f"{cnt}/{num_pairs*self.num_main_points} data generated")
 
         return data

@@ -20,7 +20,7 @@ clustering_service = get_clustering_service()
 clustering_service.start()
 
 # User Generator
-generated_data = generate_data()
+generated_data = generate_data(clustering_service.clustering_engine.G)
 data = iter(generated_data)
 num_all_data = len(list(generated_data))   # همه داده‌ها
 

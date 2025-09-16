@@ -2,6 +2,7 @@ import random
 from datetime import datetime, timezone
 from typing import Tuple, List, Dict
 
+from networkx import MultiDiGraph
 import osmnx as ox
 
 from app.service.models import UserLocation
@@ -71,16 +72,17 @@ def generate_random_users(
 #     return dataset
 
 # Modified to return graph as well for calculating metrics
-def generate_data(return_graph: bool = False):
-    graph = ox.graph_from_place(PLACE, network_type='walk')
+def generate_data(graph: MultiDiGraph = None, return_graph: bool = False):
+    if not graph:
+        graph = ox.graph_from_place(PLACE, network_type='walk')
 
     pipeline = OSMTestDataPipeline(
         graph,
         storage_path="savojbolagh.json",
-        num_main_points=3,
+        num_main_points=250,
         neighbors_k=20,
-        sample_size=20,
-        max_walk_dist=200,
+        sample_size=5000,
+        max_walk_dist=500,
         seed=42
     )
 
