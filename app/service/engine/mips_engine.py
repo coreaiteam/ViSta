@@ -10,6 +10,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import math
 
 from ..models import UserLocation, ClusterGroup
+from .monitoring import AdvancedResourceMonitor
 
 
 class ClusteringEngine:
@@ -250,61 +251,62 @@ class ClusteringEngine:
         Returns:
             List of ClusterGroup objects
         """
-        if len(user_locations) < 2:
-            return []
+        with AdvancedResourceMonitor() as monitor:
+            if len(user_locations) < 2:
+                return []
 
-        print(f"Clustering {len(user_locations)} users...")
+            print(f"Clustering {len(user_locations)} users...")
 
-        # Create feature matrix
+            # Create feature matrix
 
-        feature_matrix = self._create_feature_matrix(user_locations)
+            feature_matrix = self._create_feature_matrix(user_locations)
 
-        # Calculate similarity matrix using cosine similarity (approximates MIPS for normalized vectors)
-        similarity_matrix = cosine_similarity(feature_matrix)
+            # Calculate similarity matrix using cosine similarity (approximates MIPS for normalized vectors)
+            similarity_matrix = cosine_similarity(feature_matrix)
 
-        # Find groups
-        groups = []
-        used_users = set()
+            # Find groups
+            groups = []
+            used_users = set()
 
-        for i, user1 in enumerate(user_locations):
-            if user1.user_id in used_users:
-                continue
+            for i, user1 in enumerate(user_locations):
+                if user1.user_id in used_users:
+                    continue
 
-            # Find most similar users
-            similarities = similarity_matrix[i]
-            similar_indices = []
+                # Find most similar users
+                similarities = similarity_matrix[i]
+                similar_indices = []
 
-            for j, sim in enumerate(similarities):
-                if i != j and sim >= self.similarity_threshold and user_locations[j].user_id not in used_users:
-                    similar_indices.append((j, sim))
+                for j, sim in enumerate(similarities):
+                    if i != j and sim >= self.similarity_threshold and user_locations[j].user_id not in used_users:
+                        similar_indices.append((j, sim))
 
-            # Sort by similarity
-            similar_indices.sort(key=lambda x: x[1], reverse=True)
+                # Sort by similarity
+                similar_indices.sort(key=lambda x: x[1], reverse=True)
 
-            # Form groups of up to 3 users
-            if similar_indices:
-                group_users = [user1]
-                used_users.add(user1.user_id)
+                # Form groups of up to 3 users
+                if similar_indices:
+                    group_users = [user1]
+                    used_users.add(user1.user_id)
 
-                # Add up to 2 more users
-                for j, sim in similar_indices[:2]:
-                    if user_locations[j].user_id not in used_users:
-                        group_users.append(user_locations[j])
-                        used_users.add(user_locations[j].user_id)
+                    # Add up to 2 more users
+                    for j, sim in similar_indices[:2]:
+                        if user_locations[j].user_id not in used_users:
+                            group_users.append(user_locations[j])
+                            used_users.add(user_locations[j].user_id)
 
-                # Calculate meeting points
-                origin_meeting, dest_meeting = self._calculate_meeting_points(
-                    group_users)
+                    # Calculate meeting points
+                    origin_meeting, dest_meeting = self._calculate_meeting_points(
+                        group_users)
 
-                # Create group
-                group_id = f"group_{'_'.join(str(u.user_id) for u in group_users)}_{int(time.time())}"
-                group = ClusterGroup(
-                    group_id=group_id,
-                    users=group_users,
-                    created_at=datetime.now(timezone.utc),
-                    meeting_point_origin=origin_meeting,
-                    meeting_point_destination=dest_meeting,
-                    status="complete" if len(group_users) == 3 else "forming"
-                )
-                groups.append(group)
-        return groups
+                    # Create group
+                    group_id = f"group_{'_'.join(str(u.user_id) for u in group_users)}_{int(time.time())}"
+                    group = ClusterGroup(
+                        group_id=group_id,
+                        users=group_users,
+                        created_at=datetime.now(timezone.utc),
+                        meeting_point_origin=origin_meeting,
+                        meeting_point_destination=dest_meeting,
+                        status="complete" if len(group_users) == 3 else "forming"
+                    )
+                    groups.append(group)
+            return groups

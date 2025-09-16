@@ -10,6 +10,7 @@ import random
 import uuid
 import math
 from ..models import UserLocation, ClusterGroup
+from .monitoring import AdvancedResourceMonitor
 
 
 @dataclass
@@ -635,10 +636,12 @@ class ClusteringEngine:
         Returns:
             List[ClusterGroup]: List of formed groups.
         """
-        print(f"[Engine] Clustering {len(user_locations)} user(s)…")
-        internal_groups: set[InternalClusterGroup] = set()
-        for user_location in user_locations:
-            group = self.add_user(user_location)
-            if group:
-                internal_groups.add(group)
-        return [group.to_cluster_group() for group in internal_groups]
+        with AdvancedResourceMonitor() as monitor:
+            print(f"[Engine] Clustering {len(user_locations)} user(s)…")
+            internal_groups: set[InternalClusterGroup] = set()
+            for user_location in user_locations:
+                group = self.add_user(user_location)
+                if group:
+                    internal_groups.add(group)
+
+            return [group.to_cluster_group() for group in internal_groups]
