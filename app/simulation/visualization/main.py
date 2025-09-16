@@ -20,9 +20,9 @@ clustering_service = get_clustering_service()
 clustering_service.start()
 
 # User Generator
-data = iter(generate_data())
-num_all_data = len(list(generate_data()))   # همه داده‌ها
-
+generated_data = generate_data()
+data = iter(generated_data)
+num_all_data = len(list(generated_data))   # همه داده‌ها
 
 ## Temparary User
 temp_user = {"origin": None, "destination": None}

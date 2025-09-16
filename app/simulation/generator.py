@@ -117,7 +117,8 @@ class OSMDataGenerator:
         data = []
         used_origins = set()
         used_dests = set()
-        
+        cnt = 0
+
         for i in range(self.num_main_points):
             origin = self._get_main_node('origin', i)
             dest = self._get_main_node('dest', i)
@@ -149,6 +150,10 @@ class OSMDataGenerator:
                 lat_o, lon_o = self._node_to_latlon(o)
                 lat_d, lon_d = self._node_to_latlon(d)
                 data.append((lat_o, lon_o, lat_d, lon_d))
+            
+            cnt += num_pairs
+            if cnt % 100 == 0:
+                print(f"{cnt}/{num_pairs*self.num_main_points} data generated")
 
         return data
 
