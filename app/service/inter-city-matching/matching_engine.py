@@ -2,7 +2,6 @@ import math
 import requests
 from typing import List, Dict, Tuple
 from datetime import timedelta
-from functools import lru_cache
 from sklearn.neighbors import BallTree
 import numpy as np
 
