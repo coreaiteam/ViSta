@@ -176,7 +176,7 @@ class ClusteringEngine:
         self.place = place
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold
-        self.cache_file = self.place.replace(", ", "-").replace(" ", "_") + ".pkl"
+        self.cache_file = "MPB_" + self.place.replace(", ", "-").replace(" ", "_") + ".pkl"
         self.G = None  # Street network graph
         self.nodes_list = None  # List of graph nodes
         self.node_to_idx = None  # Mapping of nodes to indices
@@ -237,7 +237,7 @@ class ClusteringEngine:
                     self.G, node, cutoff=5000, weight='length'
                 )
                 sorted_distances = sorted(
-                    distances.items(), key=lambda x: x[1])[:200]
+                    distances.items(), key=lambda x: x[1])[:self.k_nearest]
 
                 # Store nearest nodes
                 nearest_nodes = {target_node: dist
@@ -259,7 +259,7 @@ class ClusteringEngine:
                         )
                         euclidean_distances.append((other_node, dist))
                 euclidean_distances.sort(key=lambda x: x[1])
-                self.nearest_nodes_cache[node] = dict(euclidean_distances[:200])
+                self.nearest_nodes_cache[node] = dict(euclidean_distances[:self.k_nearest])
 
     def _save_cache(self):
         """Save precomputed to a cache file."""

@@ -12,14 +12,10 @@ import math
 from ..models import UserLocation, ClusterGroup
 
 
-place = "Savojbolagh County, Alborz Province, Iran"
-G = ox.graph_from_place(place, network_type='walk')
-
-
 class ClusteringEngine:
     def __init__(self, place: str = "Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran",
                  k_nearest: int = 100, similarity_threshold: float = 0.7,
-                 cache_file: str = "spatial_cache.pkl"):
+                ):
         """
         Initialize the spatial clustering system.
 
@@ -32,7 +28,7 @@ class ClusteringEngine:
         self.place = place
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold
-        self.cache_file = cache_file
+        self.cache_file = "MIPS_" + self.place.replace(", ", "-").replace(" ", "_") + ".pkl"
 
         # Graph and precomputed data
         self.G = None
