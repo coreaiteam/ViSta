@@ -10,6 +10,11 @@ from .output_handlers import OutputHandlerFactory, OutputHandler
 from .models import OutputMessage, UserLocation
 from ..config import PLACE
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
 logger = logging.getLogger(__name__)
 
 
