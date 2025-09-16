@@ -8,7 +8,7 @@ from .data_storage import DataStorage
 from .engine.MPBucketingEngine import ClusteringEngine
 from .output_handlers import OutputHandlerFactory, OutputHandler
 from .models import OutputMessage, UserLocation
-from ..config import PLACE
+from ..config import PLACES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +28,7 @@ class ClusteringService:
 
         # Initialize components
         self.data_storage = DataStorage()
-        self.clustering_engine = ClusteringEngine(place=PLACE)
+        self.clustering_engine = ClusteringEngine(places=PLACES)
         self.output_handlers: List[OutputHandler] = []
 
         # Threading

@@ -155,22 +155,22 @@ class User:
 class ClusteringEngine:
     """A class to cluster users based on their origin and destination locations."""
 
-    def __init__(self, place: str = "Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran",
+    def __init__(self, places: List[str] = ["Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran"],
                  k_nearest: int = 100, similarity_threshold: float = 0.5,
                 ):
         """
         Initialize the clustering engine with geographical and clustering parameters.
 
         Args:
-            place (str): Geographical area for the street network.
+            places List[str]: List of geographical area for the street network.
             k_nearest (int): Number of nearest nodes to consider for signatures.
             similarity_threshold (float): Minimum similarity for clustering users.
             cache_file (str): File to store precomputed signature data.
         """
-        self.place = place
+        self.places = places
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold
-        self.cache_file = "LSH_" + self.place.replace(", ", "-").replace(" ", "_") + ".pkl"
+        self._make_cache_file_name(places=places)
         self.G = None  # Street network graph
         self.nodes_list = None  # List of graph nodes
         self.node_to_idx = None  # Mapping of nodes to indices
@@ -185,6 +185,13 @@ class ClusteringEngine:
         self._load_or_compute_graph()  # Load street network graph
         self._build_ball_tree()  # Build BallTree for spatial queries
         self._load_or_compute_precomputed_data()  # Load or compute signatures
+
+    def _make_cache_file_name(self, places: List[str]):
+        self.cache_file = "LSH_"
+
+        for p in places:
+            self.cache_file += p.replace(", ", "-").replace(" ", "_")
+        self.cache_file += ".pkl"
 
     def _init_min_hashing(self):
         """Initialize parameters for MinHash and Locality Sensitive Hashing (LSH)."""
@@ -201,8 +208,8 @@ class ClusteringEngine:
 
     def _load_or_compute_graph(self):
         """Load the street network graph from OpenStreetMap."""
-        print(f"Loading graph for {self.place}...")
-        self.G = ox.graph_from_place(self.place, network_type='walk')
+        print(f"Loading graph for {self.places}...")
+        self.G = ox.graph_from_place(self.places, network_type='walk')
         self.nodes_list = list(self.G.nodes())  # Get list of graph nodes
         self.node_to_idx = {node: idx for idx, node in enumerate(
             self.nodes_list)}  # Map nodes to indices

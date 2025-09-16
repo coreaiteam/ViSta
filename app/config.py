@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 
 
-PLACE = "Tehran Province, Iran"
+PLACES = ["Tehran Province, Iran", "Alborz Province, Iran"]
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./rideshare.db"

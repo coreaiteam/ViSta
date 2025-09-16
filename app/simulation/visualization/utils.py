@@ -8,7 +8,7 @@ import osmnx as ox
 from app.service.models import UserLocation
 from app.simulation.generator import OSMTestDataPipeline
 
-from ...config import PLACE
+from ...config import PLACES
 
 
 def generate_random_users(
@@ -74,7 +74,7 @@ def generate_random_users(
 # Modified to return graph as well for calculating metrics
 def generate_data(graph: MultiDiGraph = None, return_graph: bool = False):
     if not graph:
-        graph = ox.graph_from_place(PLACE, network_type='walk')
+        graph = ox.graph_from_place(PLACES, network_type='walk')
 
     pipeline = OSMTestDataPipeline(
         graph,

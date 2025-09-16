@@ -14,22 +14,22 @@ from .monitoring import AdvancedResourceMonitor
 
 
 class ClusteringEngine:
-    def __init__(self, place: str = "Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran",
+    def __init__(self, places: List[str] = ["Savojbolagh Central District, Savojbolagh County, Alborz Province, Iran"],
                  k_nearest: int = 100, similarity_threshold: float = 0.7,
                 ):
         """
         Initialize the spatial clustering system.
 
         Args:
-            place: Location to extract graph from OSM
+            places: Locations to extract graph from OSM
             k_nearest: Number of nearest nodes to consider for each location
             similarity_threshold: Minimum similarity threshold for clustering
             cache_file: File to cache precomputed data
         """
-        self.place = place
+        self.places = places
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold
-        self.cache_file = "MIPS_" + self.place.replace(", ", "-").replace(" ", "_") + ".pkl"
+        self._make_cache_file_name(places=places)
 
         # Graph and precomputed data
         self.G = None
@@ -47,10 +47,17 @@ class ClusteringEngine:
         self._build_ball_tree()
         self._load_or_compute_precomputed_data()
 
+    def _make_cache_file_name(self, places: List[str]):
+        self.cache_file = "MIPS_"
+
+        for p in places:
+            self.cache_file += p.replace(", ", "-").replace(" ", "_")
+        self.cache_file += ".pkl"
+
     def _load_or_compute_graph(self):
-        """Load OSM graph for the specified place."""
-        print(f"Loading graph for {self.place}...")
-        self.G = ox.graph_from_place(self.place, network_type='walk')
+        """Load OSM graph for the specified places."""
+        print(f"Loading graph for {self.places}...")
+        self.G = ox.graph_from_place(self.places, network_type='walk')
         self.nodes_list = list(self.G.nodes())
         self.node_to_idx = {node: idx for idx,
                             node in enumerate(self.nodes_list)}
