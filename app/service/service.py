@@ -29,6 +29,7 @@ class ClusteringService:
         # Initialize components
         self.data_storage = DataStorage()
         self.clustering_engine = ClusteringEngine(places=PLACES)
+        self.engine_name = self.clustering_engine.engine_name
         self.output_handlers: List[OutputHandler] = []
 
         # Threading

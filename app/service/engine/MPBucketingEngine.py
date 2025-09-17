@@ -150,6 +150,7 @@ class ClusteringEngine:
             k_nearest (int): Number of nearest nodes to consider for signatures.
             similarity_threshold (float): Minimum similarity for clustering users.
         """
+        self.engine_name = "MPBucketing_Engine"
         self.places = places
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold

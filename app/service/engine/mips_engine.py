@@ -26,6 +26,7 @@ class ClusteringEngine:
             similarity_threshold: Minimum similarity threshold for clustering
             cache_file: File to cache precomputed data
         """
+        self.engine_name = "MIPS_Engine"
         self.places = places
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold

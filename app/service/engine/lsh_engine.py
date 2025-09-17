@@ -167,6 +167,7 @@ class ClusteringEngine:
             similarity_threshold (float): Minimum similarity for clustering users.
             cache_file (str): File to store precomputed signature data.
         """
+        self.engine_name = "LSH_Engine"
         self.places = places
         self.k_nearest = k_nearest
         self.similarity_threshold = similarity_threshold

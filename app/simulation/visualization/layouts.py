@@ -151,6 +151,27 @@ main_layout = dbc.Container(
                             className="shadow-sm",
                             style={"borderRadius": "12px"},
                         ),
+                        # Add this to your layout components
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Button(
+                                    "💾 Save Data & Metrics",
+                                    id="save-data-btn",
+                                    color="info",
+                                    className="me-1",
+                                    n_clicks=0
+                                ),
+                                html.Div(id="save-status")
+                            ], width=12)
+                        ], className="mb-3"),
+
+                        # Also add a section to display metrics if you want
+                        dbc.Row([
+                            dbc.Col([
+                                html.H4("Latest Metrics"),
+                                html.Div(id="metrics-display")
+                            ], width=12)
+                        ], className="mb-3")
                     ],
                     md=3,  # narrow left column
                 ),
