@@ -52,31 +52,6 @@ class InternalClusterGroup:
         """Generate hash based on group_id."""
         return hash(self.group_id)
 
-    def _calculate_meeting_points(
-        self, users: List[UserLocation]
-    ) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
-        """
-        Calculate the average meeting points for origin and destination coordinates.
-
-        Args:
-            users (List[UserLocation]): List of user locations in the group.
-
-        Returns:
-            Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float]]]: 
-            Origin and destination meeting point coordinates, or None if no users.
-        """
-        if not users:
-            return None, None
-        origin_lats = [u.origin_lat for u in users]
-        origin_lngs = [u.origin_lng for u in users]
-        origin_meeting = (np.mean(origin_lats), np.mean(
-            origin_lngs))  # Average origin coordinates
-        dest_lats = [u.destination_lat for u in users]
-        dest_lngs = [u.destination_lng for u in users]
-        # Average destination coordinates
-        dest_meeting = (np.mean(dest_lats), np.mean(dest_lngs))
-        return origin_meeting, dest_meeting
-
     def update(self, new_user_location: UserLocation, remove=False) -> Optional[int]:
         """
         Update the group by adding or removing a user and recalculate meeting points.
@@ -95,9 +70,6 @@ class InternalClusterGroup:
                 return self.users[0].user_id
         else:
             self.users.append(new_user_location)  # Add new user to the group
-        # Recalculate meeting points after updating users
-        self.meeting_point_origin, self.meeting_point_destination = self._calculate_meeting_points(
-            self.users)
         return None
 
     def to_cluster_group(self) -> ClusterGroup:
@@ -617,10 +589,12 @@ class ClusteringEngine:
 
 
         for b, dist in orig_buckets:
-            self.orig_buckets[b][group_id] = ([u.user_id for u in members], dist)
+            new_dist = math.sqrt(main_user.orig_buckets[b]**2 + dist**2)
+            self.orig_buckets[b][group_id] = ([u.user_id for u in members], new_dist)
 
         for b, dist in dest_buckets:
-            self.dest_buckets[b][group_id] = ([u.user_id for u in members], dist)
+            new_dist = math.sqrt(main_user.dest_buckets[b]**2 + dist**2)
+            self.dest_buckets[b][group_id] = ([u.user_id for u in members], new_dist)
 
         return group
 
