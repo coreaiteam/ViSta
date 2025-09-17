@@ -1,6 +1,9 @@
+import os
 import uuid
 import math
 import pickle
+import tempfile
+import traceback
 
 import numpy as np
 import osmnx as ox
@@ -171,10 +174,9 @@ class ClusteringEngine:
         Initialize the clustering engine with geographical and clustering parameters.
 
         Args:
-            places List[str]: List of geographical area for the street network.
+            places List[str]: List of geographical areas for the street network.
             k_nearest (int): Number of nearest nodes to consider for signatures.
             similarity_threshold (float): Minimum similarity for clustering users.
-            cache_file (str): File to store precomputed data.
         """
         self.places = places
         self.k_nearest = k_nearest
@@ -187,27 +189,29 @@ class ClusteringEngine:
         self.nearest_nodes_cache: Dict[int, Dict[int, float]] = {}
         self.ball_tree = None  # BallTree for nearest neighbor search
         self.node_coords = None  # Coordinates of graph nodes
-        self.orig_buckets: Dict[int, Dict[int, Tuple[List[int], float]]] = defaultdict(dict)  #  {bid: {cid: ([user_ids], dist)}}
-        self.dest_buckets: Dict[int, Dict[int, Tuple[List[int], float]]] = defaultdict(dict)  #  {bid: {cid: ([user_ids], dist)}}
+        self.orig_buckets: Dict[int, Dict[int, Tuple[List[int], float]]] = defaultdict(dict)
+        self.dest_buckets: Dict[int, Dict[int, Tuple[List[int], float]]] = defaultdict(dict)
         self.users: Dict[int, User] = {}  # Dictionary of users
         self._load_or_compute_graph()  # Load street network graph
         self._build_ball_tree()  # Build BallTree for spatial queries
         self._load_or_compute_precomputed_data()
 
     def _make_cache_file_name(self, places: List[str]):
+        """Generate cache file name based on places."""
         self.cache_file = "MPB_"
-
         for p in places:
             self.cache_file += p.replace(", ", "-").replace(" ", "_")
         self.cache_file += ".pkl"
+        # Directory for temporary chunk files
+        self.temp_dir = os.path.join(os.path.dirname(self.cache_file), "temp_chunks")
+        os.makedirs(self.temp_dir, exist_ok=True)
 
     def _load_or_compute_graph(self):
         """Load the street network graph from OpenStreetMap."""
         print(f"Loading graph for {self.places}...")
         self.G = ox.graph_from_place(self.places, network_type='walk')
         self.nodes_list = list(self.G.nodes())  # Get list of graph nodes
-        self.node_to_idx = {node: idx for idx, node in enumerate(
-            self.nodes_list)}  # Map nodes to indices
+        self.node_to_idx = {node: idx for idx, node in enumerate(self.nodes_list)}
         print(f"Graph loaded with {len(self.nodes_list)} nodes")
 
     def _build_ball_tree(self):
@@ -226,59 +230,216 @@ class ClusteringEngine:
         print("BallTree built successfully")
 
     def _load_or_compute_precomputed_data(self):
-        try:
-            with open(self.cache_file, 'rb') as f:
-                cache_data = pickle.load(f)
-                self.nearest_nodes_cache = cache_data['nearest_nodes']
-                print("Loaded precomputed data from cache")
-        except FileNotFoundError:
-            print("Cache not found. Computing precomputed data...")
+        """Load precomputed data with memory safety and resume capability."""
+        # Check if complete cache file exists
+        if os.path.exists(self.cache_file):
+            try:
+                file_size = os.path.getsize(self.cache_file) / (1024 * 1024)  # MB
+                print(f"Cache file size: {file_size:.2f} MB")
+                
+                with open(self.cache_file, 'rb') as f:
+                    cache_data = pickle.load(f)
+                    self.nearest_nodes_cache = cache_data['nearest_nodes']
+                    print(f"Loaded {len(self.nearest_nodes_cache)} nodes from cache")
+                return
+            except Exception as e:
+                print(f"Error loading cache file: {e}. Recomputing...")
+        
+        # Check for existing temporary chunk files from previous run
+        temp_files = self._find_existing_chunk_files()
+        
+        if temp_files:
+            print(f"Found {len(temp_files)} incomplete chunk files from previous run. Resuming computation...")
+            self._resume_from_chunk_files(temp_files)
+        else:
+            print("No cache found. Starting fresh computation...")
             self._precompute_data()
-            self._save_cache()
+
+    def _find_existing_chunk_files(self) -> List[str]:
+        """Find existing temporary chunk files from previous runs."""
+        chunk_files = []
+        if os.path.exists(self.temp_dir):
+            for file in os.listdir(self.temp_dir):
+                if file.startswith("chunk_") and file.endswith(".pkl"):
+                    chunk_files.append(os.path.join(self.temp_dir, file))
+        
+        # Sort files by chunk start index
+        chunk_files.sort(key=lambda x: int(x.split('_')[-2]))
+        return chunk_files
+
+    def _resume_from_chunk_files(self, temp_files: List[str]):
+        """Resume computation from existing chunk files."""
+        # First, load all completed chunks into memory
+        processed_nodes = set()
+        for temp_file in temp_files:
+            try:
+                with open(temp_file, 'rb') as f:
+                    chunk_data = pickle.load(f)
+                    self.nearest_nodes_cache.update(chunk_data)
+                    processed_nodes.update(chunk_data.keys())
+                print(f"Loaded chunk {temp_file} with {len(chunk_data)} nodes")
+            except Exception as e:
+                print(f"Error loading chunk file {temp_file}: {e}")
+        
+        # Find which nodes still need to be processed
+        all_nodes = set(self.nodes_list)
+        nodes_to_process = list(all_nodes - processed_nodes)
+        
+        if not nodes_to_process:
+            print("All nodes already processed. Merging into final cache...")
+            self._create_final_cache_from_chunks(temp_files)
+            return
+        
+        print(f"Resuming computation: {len(processed_nodes)} nodes already processed, "
+              f"{len(nodes_to_process)} nodes remaining")
+        
+        # Continue processing remaining nodes
+        self._process_remaining_nodes(nodes_to_process, temp_files)
+
+    def _process_remaining_nodes(self, nodes_to_process: List[int], existing_temp_files: List[str]):
+        """Process the remaining nodes and create new chunk files."""
+        total_remaining = len(nodes_to_process)
+        chunk_size = 5000
+        
+        for chunk_start in range(0, total_remaining, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, total_remaining)
+            chunk_nodes = nodes_to_process[chunk_start:chunk_end]
+            
+            chunk_data = {}
+            for i, node in enumerate(chunk_nodes):
+                if i % 100 == 0:
+                    print(f"Processing remaining node {chunk_start + i}/{total_remaining}")
+                
+                try:
+                    # Calculate shortest path distances
+                    distances = nx.single_source_dijkstra_path_length(
+                        self.G, node, cutoff=5000, weight='length'
+                    )
+                    sorted_distances = sorted(distances.items(), key=lambda x: x[1])[:self.k_nearest]
+                    chunk_data[node] = {target_node: dist for target_node, dist in sorted_distances}
+                    
+                except Exception as e:
+                    print(f"Error processing node {node}: {e}")
+                    # Fallback to Euclidean distance
+                    node_coords = (self.G.nodes[node]['y'], self.G.nodes[node]['x'])
+                    euclidean_distances = []
+                    for other_node in self.nodes_list:
+                        if other_node != node:
+                            other_coords = (self.G.nodes[other_node]['y'], self.G.nodes[other_node]['x'])
+                            dist = ox.distance.euclidean_dist_vec(
+                                node_coords[0], node_coords[1],
+                                other_coords[0], other_coords[1]
+                            )
+                            euclidean_distances.append((other_node, dist))
+                    euclidean_distances.sort(key=lambda x: x[1])
+                    chunk_data[node] = dict(euclidean_distances[:self.k_nearest])
+            
+            # Save this chunk to temporary file
+            temp_file = os.path.join(self.temp_dir, f"chunk_{chunk_start}_{chunk_end}.pkl")
+            with open(temp_file, 'wb') as f:
+                pickle.dump(chunk_data, f)
+            existing_temp_files.append(temp_file)
+            print(f"Saved new chunk with {len(chunk_data)} nodes")
+            
+            # Update in-memory cache
+            self.nearest_nodes_cache.update(chunk_data)
+            
+            # Free memory
+            del chunk_data
+        
+        # Create final cache from all chunk files
+        self._create_final_cache_from_chunks(existing_temp_files)
 
     def _precompute_data(self):
+        """Precompute nearest nodes and distances with guaranteed memory safety."""
         print("Precomputing nearest nodes and distances...")
-        for i, node in enumerate(self.nodes_list):
-            if i % 100 == 0:
-                print(f"Processing node {i}/{len(self.nodes_list)}")
-            try:
-                # Compute shortest path distances using Dijkstra's algorithm
-                distances = nx.single_source_dijkstra_path_length(
-                    self.G, node, cutoff=5000, weight='length'
-                )
-                sorted_distances = sorted(
-                    distances.items(), key=lambda x: x[1])[:self.k_nearest]
-
-                # Store nearest nodes
-                nearest_nodes = {target_node: dist
-                                 for target_node, dist in sorted_distances}
-                self.nearest_nodes_cache[node] = nearest_nodes
-            except Exception as e:
-                print(f"Error processing node {node}: {e}")
-                # Fallback to Euclidean distances if Dijkstra fails
-                node_coords = (self.G.nodes[node]
-                               ['y'], self.G.nodes[node]['x'])
-                euclidean_distances = []
-                for other_node in self.nodes_list:
-                    if other_node != node:
-                        other_coords = (
-                            self.G.nodes[other_node]['y'], self.G.nodes[other_node]['x'])
-                        dist = ox.distance.euclidean_dist_vec(
-                            node_coords[0], node_coords[1],
-                            other_coords[0], other_coords[1]
+        total_nodes = len(self.nodes_list)
+        
+        temp_files = []
+        
+        try:
+            # Process in small chunks to avoid memory issues
+            chunk_size = 5000
+            for chunk_start in range(0, total_nodes, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, total_nodes)
+                chunk_nodes = self.nodes_list[chunk_start:chunk_end]
+                
+                chunk_data = {}
+                for i, node in enumerate(chunk_nodes):
+                    if i % 100 == 0:
+                        print(f"Processing node {chunk_start + i}/{total_nodes}")
+                    
+                    try:
+                        # Calculate shortest path distances
+                        distances = nx.single_source_dijkstra_path_length(
+                            self.G, node, cutoff=5000, weight='length'
                         )
-                        euclidean_distances.append((other_node, dist))
-                euclidean_distances.sort(key=lambda x: x[1])
-                self.nearest_nodes_cache[node] = dict(euclidean_distances[:self.k_nearest])
+                        sorted_distances = sorted(distances.items(), key=lambda x: x[1])[:self.k_nearest]
+                        chunk_data[node] = {target_node: dist for target_node, dist in sorted_distances}
+                        
+                    except Exception as e:
+                        print(f"Error processing node {node}: {e}")
+                        # Fallback to Euclidean distance
+                        node_coords = (self.G.nodes[node]['y'], self.G.nodes[node]['x'])
+                        euclidean_distances = []
+                        for other_node in self.nodes_list:
+                            if other_node != node:
+                                other_coords = (self.G.nodes[other_node]['y'], self.G.nodes[other_node]['x'])
+                                dist = ox.distance.euclidean_dist_vec(
+                                    node_coords[0], node_coords[1],
+                                    other_coords[0], other_coords[1]
+                                )
+                                euclidean_distances.append((other_node, dist))
+                        euclidean_distances.sort(key=lambda x: x[1])
+                        chunk_data[node] = dict(euclidean_distances[:self.k_nearest])
+                
+                # Save this chunk to temporary file
+                temp_file = os.path.join(self.temp_dir, f"chunk_{chunk_start}_{chunk_end}.pkl")
+                with open(temp_file, 'wb') as f:
+                    pickle.dump(chunk_data, f)
+                temp_files.append(temp_file)
+                print(f"Saved chunk {len(temp_files)} - {len(chunk_data)} nodes")
+                
+                # Update in-memory cache
+                self.nearest_nodes_cache.update(chunk_data)
+                
+                # Free memory
+                del chunk_data
+            
+            # Create final cache from all chunk files
+            self._create_final_cache_from_chunks(temp_files)
+            
+        finally:
+            # Clean up temporary files after successful completion
+            if hasattr(self, 'nearest_nodes_cache') and len(self.nearest_nodes_cache) == total_nodes:
+                self._cleanup_temp_files()
 
-    def _save_cache(self):
-        """Save precomputed to a cache file."""
-        cache_data = {
-            'nearest_nodes': self.nearest_nodes_cache,
-        }
+    def _create_final_cache_from_chunks(self, temp_files: List[str]):
+        """Create final cache file from all chunk files."""
+        print("Creating final cache file from chunks...")
+        
+        # Final cache structure
+        final_cache = {'nearest_nodes': self.nearest_nodes_cache}
+        
+        # Save to final cache file
         with open(self.cache_file, 'wb') as f:
-            pickle.dump(cache_data, f)
-        print("Precomputed data saved to cache")
+            pickle.dump(final_cache, f)
+        
+        print(f"Final cache created with {len(self.nearest_nodes_cache)} nodes")
+        
+        # Clean up temporary files
+        self._cleanup_temp_files()
+
+    def _cleanup_temp_files(self):
+        """Clean up temporary chunk files."""
+        if os.path.exists(self.temp_dir):
+            for file in os.listdir(self.temp_dir):
+                if file.startswith("chunk_") and file.endswith(".pkl"):
+                    try:
+                        os.remove(os.path.join(self.temp_dir, file))
+                    except:
+                        pass
+            print("Temporary chunk files cleaned up")
 
     def _get_nearest_nodes(self, coords: Tuple[float, float]) -> Tuple[Dict[int, float], int]:
         lat, lng = coords
@@ -619,12 +780,17 @@ class ClusteringEngine:
         Returns:
             List[ClusterGroup]: List of formed groups.
         """
-        with AdvancedResourceMonitor() as monitor:
-            print(f"[Engine] Clustering {len(user_locations)} user(s)…")
-            internal_groups: Set[InternalClusterGroup] = set()
-            for user_location in user_locations:
-                group = self.add_user(user_location)
-                if group:
-                    internal_groups.add(group)
-            
-            return [group.to_cluster_group() for group in internal_groups]
+        try:
+            with AdvancedResourceMonitor() as monitor:
+                print(f"[Engine] Clustering {len(user_locations)} user(s)…")
+                internal_groups: Set[InternalClusterGroup] = set()
+                for user_location in user_locations:
+                    group = self.add_user(user_location)
+                    if group:
+                        internal_groups.add(group)
+                
+                return [group.to_cluster_group() for group in internal_groups]
+        except Exception as e:
+            print("Complete traceback:")
+            traceback.print_exc()
+            print(f"Error code: {e.args[0] if e.args else 'No error code'}")
