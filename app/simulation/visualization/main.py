@@ -1,7 +1,6 @@
-import json
-from datetime import datetime
-from pathlib import Path
-from ..metrics import evaluate_user_clustering
+import time
+from threading import Lock
+
 import dash
 from dash import Input, Output, State, html, callback, ALL
 from dash.exceptions import PreventUpdate
@@ -35,383 +34,8 @@ temp_user = {"origin": None, "destination": None}
 ## Temparary Markers
 temp_markers = []
 
-## Data Saving
-SAVE_DIR = Path("saved_data")
-SAVE_DIR.mkdir(exist_ok=True)
+## users and clusters
 
-    
-# def save_users_and_metrics():
-#     """Save current users to JSON file and compute metrics"""
-#     try:
-#         # Get current timestamp for filename
-#         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-#         # Get all users (as dicts)
-#         users_dict = clustering_service.get_all_users()
-        
-#         if not users_dict:
-#             print("No users to save")
-#             return None
-        
-#         # # Save users to JSON
-#         # users_filename = SAVE_DIR / f"users_{timestamp}.json"
-#         # with open(users_filename, 'w') as f:
-#         #     json.dump(users_dict, f, indent=2)
-        
-#         # print(f"Saved {len(users_dict)} users to {users_filename}")
-        
-#         # Convert dicts to UserLocation objects for metrics
-#         users_objects = []
-#         for user_dict in users_dict:
-#             try:
-#                 user_obj = UserLocation(
-#                     user_id=user_dict['user_id'],
-#                     origin_lat=user_dict['origin_lat'],
-#                     origin_lng=user_dict['origin_lng'],
-#                     destination_lat=user_dict['destination_lat'],
-#                     destination_lng=user_dict['destination_lng'],
-#                     stored_at=datetime.fromisoformat(user_dict['stored_at'].replace('Z', '+00:00')) if isinstance(user_dict['stored_at'], str) else user_dict['stored_at'],
-#                     status=user_dict.get('status', 'PENDING')
-#                 )
-#                 users_objects.append(user_obj)
-#             except (KeyError, ValueError) as e:
-#                 print(f"Error converting user dict to object: {e}")
-#                 continue
-        
-#         # Get clusters for metrics evaluation - use the clustering engine directly
-#         clusters = []
-        
-#         # Method 1: Try to get clusters from the clustering engine
-#         try:
-#             # Check if clustering_engine has a way to get current clusters
-#             if hasattr(clustering_service.clustering_engine, 'get_current_clusters'):
-#                 clusters = clustering_service.clustering_engine.get_current_clusters()
-#             elif hasattr(clustering_service.clustering_engine, 'cluster_groups'):
-#                 clusters = clustering_service.clustering_engine.cluster_groups
-#         except Exception as e:
-#             print(f"Error getting clusters from engine: {e}")
-        
-#         # Method 2: If no clusters from engine, try to cluster the current users
-#         if not clusters and users_objects:
-#             print("No clusters found from engine, attempting to cluster current users...")
-#             try:
-#                 # Use the clustering engine to cluster the current users
-#                 clusters = clustering_service.clustering_engine.cluster_users(users_objects)
-#                 print(f"Clustered {len(users_objects)} users into {len(clusters)} clusters")
-#             except Exception as e:
-#                 print(f"Error clustering users: {e}")
-        
-        
-#         # Convert clusters to the format expected by metrics evaluation
-#         cluster_lists = []
-#         if clusters:
-#             for cluster in clusters:
-#                 cluster_users = []
-#                 # Handle different cluster formats
-#                 if hasattr(cluster, 'user_ids'):  # ClusterGroup object
-#                     for user_id in cluster.user_ids:
-#                         user_obj = next((u for u in users_objects if u.user_id == user_id), None)
-#                         if user_obj:
-#                             cluster_users.append(user_obj)
-                
-#                 elif hasattr(cluster, 'users'):  # ClusterGroup with users list
-#                     for user in cluster.users:
-#                         if hasattr(user, 'user_id'):
-#                             user_obj = next((u for u in users_objects if u.user_id == user.user_id), None)
-#                             if user_obj:
-#                                 cluster_users.append(user_obj)
-                
-#                 elif isinstance(cluster, (list, tuple)):  # List of users
-#                     for user in cluster:
-#                         if hasattr(user, 'user_id'):
-#                             user_obj = next((u for u in users_objects if u.user_id == user.user_id), None)
-#                             if user_obj:
-#                                 cluster_users.append(user_obj)
-                
-#                 elif isinstance(cluster, dict):  # Dictionary format
-#                     user_ids = cluster.get('user_ids', [])
-#                     for user_id in user_ids:
-#                         user_obj = next((u for u in users_objects if u.user_id == user_id), None)
-#                         if user_obj:
-#                             cluster_users.append(user_obj)
-                
-#                 if cluster_users:
-#                     cluster_lists.append(cluster_users)
-        
-#         # Evaluate metrics if we have clusters
-#         if cluster_lists:
-#             print(f"Found {len(cluster_lists)} clusters for metrics evaluation")
-            
-#             # Get the graph from clustering service
-#             graph = clustering_service.clustering_engine.G
-            
-#             metrics = evaluate_user_clustering(
-#                 user_locations=users_objects,
-#                 clusters=cluster_lists,
-#                 graph=graph,
-#                 alpha=1.0
-#             )
-            
-#             # Save metrics to JSON
-#             metrics_filename = SAVE_DIR / f"metrics_{clustering_service.engine_name}_{timestamp}.json"
-#             with open(metrics_filename, 'w') as f:
-#                 json.dump(metrics.to_dict(), f, indent=2)
-            
-#             print(f"Saved metrics to {metrics_filename}")
-            
-#             # Print summary
-#             print(f"\n=== METRICS SUMMARY ===")
-#             print(f"Silhouette Score: {metrics.combined_silhouette:.3f}")
-#             print(f"Dunn Index: {metrics.dun_index:.3f}")
-#             print(f"Combined SSE: {metrics.combined_sse:.2f}")
-#             print(f"Total Users: {len(users_objects)}")
-#             print(f"Total Clusters: {len(cluster_lists)}")
-            
-#             # Print cluster sizes
-#             print(f"Cluster sizes: {[len(cluster) for cluster in cluster_lists]}")
-            
-#             return metrics
-#         else:
-#             print("No valid clusters found for metrics evaluation")
-#             print(f"Users available: {len(users_objects)}")
-#             if users_objects:
-#                 print("Creating single cluster with all users for basic metrics...")
-#                 # Create one big cluster with all users for basic metrics
-#                 cluster_lists = [users_objects]
-                
-#                 # Get the graph from clustering service
-#                 graph = clustering_service.clustering_engine.G
-                
-#                 metrics = evaluate_user_clustering(
-#                     user_locations=users_objects,
-#                     clusters=cluster_lists,
-#                     graph=graph,
-#                     alpha=1.0
-#                 )
-                
-#                 # Save metrics to JSON
-#                 metrics_filename = SAVE_DIR / f"metrics_{timestamp}_single_cluster.json"
-#                 with open(metrics_filename, 'w') as f:
-#                     json.dump(metrics.to_dict(), f, indent=2)
-                
-#                 print(f"Saved single-cluster metrics to {metrics_filename}")
-#                 print(f"Single cluster metrics - Silhouette: {metrics.combined_silhouette:.3f}")
-                
-#                 return metrics
-        
-#         return None
-        
-#     except Exception as e:
-#         print(f"Error saving users and metrics: {e}")
-#         import traceback
-#         traceback.print_exc()
-#         return None
-
-def save_users_and_metrics():
-    """Save current users to JSON file and compute metrics"""
-    try:
-        # Get current timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Get all users (as dicts)
-        users_dict = clustering_service.get_all_users()
-        
-        if not users_dict:
-            print("No users to save")
-            return None
-        
-        # # Save users to JSON
-        # users_filename = SAVE_DIR / f"users_{timestamp}.json"
-        # with open(users_filename, 'w') as f:
-        #     json.dump(users_dict, f, indent=2)
-        
-        # print(f"Saved {len(users_dict)} users to {users_filename}")
-        
-        # Convert dicts to UserLocation objects for metrics
-        users_objects = []
-        for user_dict in users_dict:
-            try:
-                user_obj = UserLocation(
-                    user_id=user_dict['user_id'],
-                    origin_lat=user_dict['origin_lat'],
-                    origin_lng=user_dict['origin_lng'],
-                    destination_lat=user_dict['destination_lat'],
-                    destination_lng=user_dict['destination_lng'],
-                    stored_at=datetime.fromisoformat(user_dict['stored_at'].replace('Z', '+00:00')) if isinstance(user_dict['stored_at'], str) else user_dict['stored_at'],
-                    status=user_dict.get('status', 'PENDING')
-                )
-                users_objects.append(user_obj)
-            except (KeyError, ValueError) as e:
-                print(f"Error converting user dict to object: {e}")
-                continue
-        
-        # Get clusters for metrics evaluation
-        clusters = clustering_service.get_all_active_groups()
-        print(clusters)
-        if not clusters:
-            print("No clusters found from service")
-            return None
-        
-        print(f"Found {len(clusters)} cluster groups from service")
-        
-        # Convert clusters to the format expected by metrics evaluation
-        cluster_lists = []
-        meeting_points = {}  # {cluster_id: {'origin': (lat, lng), 'destination': (lat, lng)}}
-        
-        for cluster_idx, cluster_dict in enumerate(clusters):
-            cluster_users = []
-            
-            # Extract users from the cluster dictionary
-            if 'users' in cluster_dict and isinstance(cluster_dict['users'], list):
-                for user_dict in cluster_dict['users']:
-                    # Find the corresponding UserLocation object
-                    user_obj = next((u for u in users_objects if u.user_id == user_dict['user_id']), None)
-                    if user_obj:
-                        cluster_users.append(user_obj)
-            
-            if cluster_users:
-                cluster_lists.append(cluster_users)
-                
-                # Extract meeting points from algorithm
-                if 'meeting_point_origin' in cluster_dict and 'meeting_point_destination' in cluster_dict:
-                    try:
-                        # Convert numpy types to regular Python floats
-                        origin_mp = cluster_dict['meeting_point_origin']
-                        dest_mp = cluster_dict['meeting_point_destination']
-                        
-                        meeting_points[cluster_idx] = {
-                            'origin': (float(origin_mp[0]), float(origin_mp[1])),
-                            'destination': (float(dest_mp[0]), float(dest_mp[1]))
-                        }
-                        print(f"Cluster {cluster_idx}: using algorithm meeting points")
-                    except (TypeError, IndexError) as e:
-                        print(f"Error extracting meeting points for cluster {cluster_idx}: {e}")
-                        # Fallback to calculated centroids
-                
-                print(f"Cluster {cluster_idx}: {len(cluster_users)} users")
-        
-        # Evaluate metrics if we have clusters
-        if cluster_lists:
-            print(f"Prepared {len(cluster_lists)} clusters for metrics evaluation")
-            
-            # Get the graph from clustering service
-            graph = clustering_service.clustering_engine.G
-            
-            # Use algorithm meeting points if available, otherwise calculate
-            centroid_method = "algorithm" if meeting_points else "calculate"
-            
-            metrics = evaluate_user_clustering(
-                user_locations=users_objects,
-                clusters=cluster_lists,
-                graph=graph,
-                meeting_points=meeting_points,
-                alpha=1.0,
-                centroid_method=centroid_method
-            )
-        # cluster_lists = []
-        
-        # for cluster_dict in clusters:
-        #     cluster_users = []
-            
-        #     # Extract users from the cluster dictionary
-        #     if 'users' in cluster_dict and isinstance(cluster_dict['users'], list):
-        #         for user_dict in cluster_dict['users']:
-        #             # Find the corresponding UserLocation object
-        #             user_obj = next((u for u in users_objects if u.user_id == user_dict['user_id']), None)
-        #             if user_obj:
-        #                 cluster_users.append(user_obj)
-        #             else:
-        #                 # If user object not found, create one from the user dict
-        #                 try:
-        #                     new_user_obj = UserLocation(
-        #                         user_id=user_dict['user_id'],
-        #                         origin_lat=user_dict['origin_lat'],
-        #                         origin_lng=user_dict['origin_lng'],
-        #                         destination_lat=user_dict['destination_lat'],
-        #                         destination_lng=user_dict['destination_lng'],
-        #                         stored_at=datetime.fromisoformat(user_dict['stored_at'].replace('Z', '+00:00')) if isinstance(user_dict['stored_at'], str) else user_dict['stored_at'],
-        #                         status=user_dict.get('status', 'PENDING')
-        #                     )
-        #                     cluster_users.append(new_user_obj)
-        #                 except (KeyError, ValueError) as e:
-        #                     print(f"Error creating user object from cluster data: {e}")
-        #                     continue
-            
-        #     if cluster_users:
-        #         cluster_lists.append(cluster_users)
-        #         # print(f"Cluster {cluster_dict.get('group_id', 'unknown')}: {len(cluster_users)} users")
-        
-        # # Evaluate metrics if we have clusters
-        # if cluster_lists:
-        #     print(f"Prepared {len(cluster_lists)} clusters for metrics evaluation")
-            
-        #     # Get the graph from clustering service
-        #     graph = clustering_service.clustering_engine.G
-            
-        #     metrics = evaluate_user_clustering(
-        #         user_locations=users_objects,
-        #         clusters=cluster_lists,
-        #         graph=graph,
-        #         alpha=1.0
-        #     )
-            
-            # Save metrics to JSON
-            metrics_filename = SAVE_DIR / f"metrics_{clustering_service.engine_name}_{timestamp}.json"
-            with open(metrics_filename, 'w') as f:
-                json.dump(metrics.to_dict(), f, indent=2)
-            
-            print(f"Saved metrics to {metrics_filename}")
-            
-            # Print summary
-            print(f"\n=== METRICS SUMMARY ===")
-            print(f"Silhouette Score: {metrics.combined_silhouette:.3f}")
-            print(f"Dunn Index: {metrics.dun_index:.3f}")
-            print(f"Combined SSE: {metrics.combined_sse:.2f}")
-            print(f"Origin SSE: {metrics.origin_metrics.sse:.2f}")
-            print(f"Destination SSE: {metrics.destination_metrics.sse:.2f}")
-            print(f"Total Users: {len(users_objects)}")
-            print(f"Total Clusters: {len(cluster_lists)}")
-            
-            # Print cluster sizes
-            cluster_sizes = [len(cluster) for cluster in cluster_lists]
-            print(f"Cluster sizes: {cluster_sizes}")
-            print(f"Average cluster size: {sum(cluster_sizes) / len(cluster_sizes):.2f}")
-            
-            # Add meeting point info to metrics
-            metrics_dict = metrics.to_dict()
-            metrics_dict['centroid_method'] = centroid_method
-            metrics_dict['algorithm_meeting_points_used'] = bool(meeting_points)
-            
-            return metrics
-        else:
-            print("No valid clusters could be prepared for metrics evaluation")
-        
-        return None
-        
-    except Exception as e:
-        print(f"Error saving users and metrics: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-# Add this callback to save data
-@callback(
-    Output("save-status", "children"),
-    Input("save-data-btn", "n_clicks"),
-    prevent_initial_call=True,
-)
-def save_data(n_clicks):
-    """Callback to save current users and compute metrics"""
-    if not n_clicks:
-        raise PreventUpdate
-    
-    result = save_users_and_metrics()
-    
-    if result:
-        return dbc.Alert("Data saved successfully!", color="success")
-    else:
-        return dbc.Alert("Failed to save data or no data available", color="warning")
-    
 @callback(
     Output("temp-markers", "children", allow_duplicate=True),
     [
@@ -548,7 +172,9 @@ def add_selected_user(n_clicks):
 
     users = clustering_service.get_all_users()
     clusters = clustering_service.get_all_active_groups()
-    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users=users, clusters=clusters)
+
+    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
+    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
     return user_layer, cluster_layer, temp_markers
 
 
@@ -569,6 +195,16 @@ def clear_temp_markers(n_clicks):
 
 
 
+
+# # Global cache for users/clusters
+last_users = None
+last_clusters = None
+
+# Add a lock to prevent concurrent execution
+callback_lock = Lock()
+last_execution_time = 0
+EXECUTION_COOLDOWN = 0.5  # 500ms cooldown
+
 @callback(
     Output("users", "children", allow_duplicate=True),
     Output("clusters", "children", allow_duplicate=True),
@@ -579,13 +215,36 @@ def refresh_map(n_intervals):
     """
     Periodically refresh the map with updated users and clusters.
     """
-    users = clustering_service.get_all_users()
-    clusters = clustering_service.get_all_active_groups()
+    global last_users, last_clusters, last_execution_time
+    
+    # Prevent concurrent execution
+    current_time = time.time()
+    if current_time - last_execution_time < EXECUTION_COOLDOWN:
+        print(f"Skipping execution - too soon after last run: {current_time - last_execution_time:.3f}s")
+        raise PreventUpdate
+    
+    with callback_lock:
+        if current_time - last_execution_time < EXECUTION_COOLDOWN:
+            raise PreventUpdate
+        
+        last_execution_time = current_time
+        
+        users = clustering_service.get_all_users()
+        clusters = clustering_service.get_all_active_groups()
+        
+        # Check if new data differs from last cached
+        if users == last_users and clusters == last_clusters:
+            raise PreventUpdate
+        
+        # Update cache
+        last_users = users
+        last_clusters = clusters
+        
+        user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
+        cluster_layer = map_handler.create_clusters_layer(clusters=clusters)
+        
+        return user_layer, cluster_layer
 
-    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
-    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
-
-    return user_layer, cluster_layer
 
 
 @callback(
@@ -628,6 +287,8 @@ def update_stats(n_intervals):
         ],
         className="g-3",
     )
+
+
 
 
 @callback(

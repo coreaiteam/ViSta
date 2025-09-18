@@ -1,6 +1,4 @@
 import dash_leaflet as dl
-from dash import html
-from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 
@@ -44,6 +42,7 @@ class MapHandler:
                 zoom=12,
                 center=self.map_center,
                 style={"width": "100%", "height": "100%"},
+                preferCanvas=True
             ),
         )
 
@@ -112,7 +111,7 @@ class MapHandler:
             weight=3,
         )
 
-    def create_cluster_line(self, cluster: ClusterGroup) -> dl.Polyline:
+    def create_cluster_line(self, cluster: ClusterGroup, color: str) -> dl.Polyline:
         if (
             cluster.meeting_point_origin is None
             or cluster.meeting_point_destination is None
@@ -120,12 +119,12 @@ class MapHandler:
             return None
         return dl.Polyline(
             positions=[cluster.meeting_point_origin, cluster.meeting_point_destination],
-            color="blue",
+            color=color,
             weight=3,
         )
 
     def create_user_to_cluster_lines(
-        self, cluster: ClusterGroup
+        self, cluster: ClusterGroup, color: str
     ) -> List[dl.Polyline]:
         lines = []
         for user in cluster.users:
@@ -133,7 +132,7 @@ class MapHandler:
                 lines.append(
                     dl.Polyline(
                         positions=[user.origin_coords, cluster.meeting_point_origin],
-                        color="red",
+                        color=color,
                         weight=2,
                         dashArray="5, 10",
                     )
@@ -145,13 +144,13 @@ class MapHandler:
                             user.destination_coords,
                             cluster.meeting_point_destination,
                         ],
-                        color="red",
+                        color=color,
                         weight=2,
                         dashArray="5, 10",
                     )
                 )
 
-        return dl.FeatureGroup(lines)
+        return [dl.FeatureGroup(lines)]
 
     def generate_user_to_cluster(self, clusters: List[ClusterGroup] = None) -> Dict:
         user_to_cluster = {}
@@ -168,14 +167,15 @@ class MapHandler:
         cluster_layers = []
 
         if clusters:
-            for cluster in clusters:
+            for idx, cluster in enumerate(clusters):
+                color = self.cluster_colors[idx % len(self.cluster_colors)]
                 cluster_components = [
                     self.create_cluster_marker(cluster, is_origin=True),
                     self.create_cluster_marker(cluster, is_origin=False),
-                    self.create_cluster_line(cluster),
+                    self.create_cluster_line(cluster, color=color),
                 ]
                 cluster_components.extend(
-                    self.create_user_to_cluster_lines(cluster)
+                    self.create_user_to_cluster_lines(cluster, color=color)
                 )
                 cluster_layers.extend([c for c in cluster_components if c is not None])
 
@@ -204,9 +204,8 @@ class MapHandler:
                     ]
                 )
                 user_line_group.append(self.create_user_line(user))
-
-        user_layers = user_line_group + user_marker_group
-
+        user_layers = [dl.FeatureGroup(children=user_line_group), dl.FeatureGroup(children=user_marker_group)]
+        
         return user_layers
 
 
