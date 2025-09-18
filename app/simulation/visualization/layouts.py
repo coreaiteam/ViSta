@@ -1,32 +1,51 @@
 import dash_bootstrap_components as dbc
-
 from dash import html, dcc  # noqa: F811
-
 from .components import map_handler
 
 
-main_layout = dbc.Container(
-    [
-        # Title
-        dbc.Row(
+inter_city_layout = (
+    dbc.Row(
+        [
             dbc.Col(
-                html.H1("User Locations Map", className="text-center text-info mb-4"),
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4(
+                                "Inter-City Clustering Map",
+                                className="card-title text-primary mb-3",
+                            ),
+                            html.Div(
+                                id="intercity-map-container",
+                                style={
+                                    "height": "calc(100vh - 150px)",
+                                    "borderRadius": "12px",
+                                    "overflow": "hidden",
+                                },
+                            ),
+                        ]
+                    ),
+                    className="shadow-sm h-100",
+                    style={"borderRadius": "12px"},
+                ),
                 width=12,
             )
-        ),
-        dbc.Row(
-            [
-                # --- Left Column: Controls + Stats ---
-                dbc.Col(
-                    [
-                        # Controls
-                        dbc.Card(
-                            dbc.CardBody(
+        ],
+        style={"minHeight": "85vh"},
+    ),
+)
+
+
+intra_city_layout = (
+    dbc.Row(
+        [
+            # Left column (controls + stats)
+            dbc.Col(
+                [
+                    # Controls Accordion
+                    dbc.Accordion(
+                        [
+                            dbc.AccordionItem(
                                 [
-                                    html.H4(
-                                        "Simulation Controls",
-                                        className="card-title text-warning mb-3",
-                                    ),
                                     dbc.Button(
                                         [
                                             html.I(className="bi bi-person-plus me-2"),
@@ -44,6 +63,7 @@ main_layout = dbc.Container(
                                                 type="number",
                                                 min=1,
                                                 step=1,
+                                                debounce=True,
                                                 placeholder="Number of users",
                                             ),
                                             dbc.Button(
@@ -91,7 +111,7 @@ main_layout = dbc.Container(
                                         id="clear-markers-btn",
                                         n_clicks=0,
                                         color="danger",
-                                        className="w-100",
+                                        className="w-100 mb-2",
                                     ),
                                     dbc.Button(
                                         [
@@ -101,121 +121,164 @@ main_layout = dbc.Container(
                                         id="add-selected-user-btn",
                                         n_clicks=0,
                                         color="success",
-                                        className="w-100",
+                                        className="w-100 mb-3",
                                     ),
-                                    html.Div(
+                                    dbc.InputGroup(
                                         [
-                                            dbc.InputGroup(
+                                            dbc.Input(
+                                                id="remove-user-id",
+                                                type="number",
+                                                placeholder="Enter User ID",
+                                                min=1,
+                                                debounce=True,
+                                            ),
+                                            dbc.Button(
                                                 [
-                                                    dbc.Input(
-                                                        id="remove-user-id",
-                                                        type="number",
-                                                        placeholder="Enter User ID",
-                                                        min=1,
+                                                    html.I(
+                                                        className="bi bi-trash me-2"
                                                     ),
-                                                    dbc.Button(
-                                                        [
-                                                            html.I(
-                                                                className="bi bi-trash me-2"
-                                                            ),
-                                                            "Remove User",
-                                                        ],
-                                                        id="remove-user-btn",
-                                                        n_clicks=0,
-                                                        color="warning",
-                                                    ),
+                                                    "Remove User",
                                                 ],
-                                                className="mt-3",
-                                            )
-                                        ]
+                                                id="remove-user-btn",
+                                                n_clicks=0,
+                                                color="warning",
+                                            ),
+                                        ],
                                     ),
-                                ]
+                                ],
+                                title="Simulation Controls ⚙️",
+                                className="mb-4",
                             ),
-                            className="mb-4 shadow-sm",
-                            style={"borderRadius": "12px"},
-                        ),
-                        # Stats
-                        dbc.Card(
-                            dbc.CardBody(
-                                [
-                                    html.H4(
-                                        "Statistics",
-                                        className="card-title text-success mb-3",
-                                    ),
-                                    html.Div(
-                                        id="stats-container",
-                                        children="Statistics will appear here.",
-                                    ),
-                                ]
-                            ),
-                            className="shadow-sm",
-                            style={"borderRadius": "12px"},
-                        ),
-                        # Add this to your layout components
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Button(
-                                    "💾 Save Data & Metrics",
-                                    id="save-data-btn",
-                                    color="info",
-                                    className="me-1",
-                                    n_clicks=0
-                                ),
-                                html.Div(id="save-status")
-                            ], width=12)
-                        ], className="mb-3"),
-
-                        # Also add a section to display metrics if you want
-                        dbc.Row([
-                            dbc.Col([
-                                html.H4("Latest Metrics"),
-                                html.Div(id="metrics-display")
-                            ], width=12)
-                        ], className="mb-3")
-                    ],
-                    md=3,  # narrow left column
-                ),
-                # --- Right Column: Map (full height) ---
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.H4("Map", className="card-title text-info mb-3"),
-                                html.Div(
-                                    id="map-container",
-                                    children=map_handler.map,
-                                    style={
-                                        "height": "100%",  # take full height
-                                        "minHeight": "100%",  # ensure stretch
-                                        "borderRadius": "8px",
-                                        "overflow": "hidden",
-                                    },
-                                ),
-                            ],
-                            className="h-100",  # stretch card body
-                        ),
-                        className="shadow-sm h-100",  # stretch card
+                        ],
+                        start_collapsed=False,
+                        className="shadow-sm",
                         style={"borderRadius": "12px"},
                     ),
-                    md=9,
-                    className="h-100",  # stretch column
+                    # Stats Accordion
+                    dbc.Accordion(
+                        [
+                            dbc.AccordionItem(
+                                [
+                                    html.Div(
+                                        [
+                                            html.H4(
+                                                "Live Statistics",
+                                                className="text-success fw-bold mb-3",
+                                            ),
+                                            html.Div(
+                                                id="stats-container",
+                                                children=[
+                                                    html.Ul(
+                                                        [
+                                                            html.Li(
+                                                                "Total Users: Loading..."
+                                                            ),
+                                                            html.Li(
+                                                                "Active Matches: Loading..."
+                                                            ),
+                                                            html.Li(
+                                                                "Clusters Formed: Loading..."
+                                                            ),
+                                                        ],
+                                                        className="list-group list-group-flush",
+                                                    )
+                                                ],
+                                            ),
+                                        ],
+                                        className="p-2",
+                                    )
+                                ],
+                                title="Statistics Overview 📊",
+                            ),
+                        ],
+                        start_collapsed=False,
+                        className="shadow-sm mt-4",
+                        style={"borderRadius": "12px"},
+                    ),
+                ],
+                xs=12,
+                md=3,
+            ),
+
+
+
+            # Right column (map)
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4("Map", className="card-title text-info mb-3 text-center"),
+                            html.Div(
+                                id="map-container",
+                                children=map_handler.map,
+                                style={
+                                    "height": "calc(100vh - 150px)",
+                                    "borderRadius": "12px",
+                                    "overflow": "hidden",
+                                },
+                            ),
+                        ],
+                        className="h-100 p-0",
+                    ),
+                    className="shadow-sm h-100",
+                    style={"borderRadius": "12px"},
+                ),
+                xs=12,
+                md=9,
+                className="mt-4 mt-md-0",
+            ),
+
+
+
+
+        ],
+        className="g-4",
+        style={"minHeight": "85vh"},
+    ),
+)
+
+
+main_layout = dbc.Container(
+    [
+        # Tabs
+        dbc.Tabs(
+            [
+                # --- Tab 1: Intra-city clustering ---
+                dbc.Tab(
+                    label="Intra-City Clustering",
+                    tab_id="intra-city",
+                    children=dbc.Container(
+                        intra_city_layout,
+                        fluid=True,
+                        className="p-3 bg-dark text-light rounded shadow-sm",
+                        style={"minHeight": "80vh"},
+                    ),
+                ),
+                # --- Tab 2: Inter-city clustering ---
+                dbc.Tab(
+                    label="Inter-City Clustering",
+                    tab_id="inter-city",
+                    children=dbc.Container(
+                        inter_city_layout,
+                        fluid=True,
+                        className="p-3 bg-dark text-light rounded shadow-sm",
+                        style={"minHeight": "80vh"},
+                    ),
                 ),
             ],
-            className="g-4",
-            style={"height": "85vh"},  # full row height (adjust as needed)
+            id="clustering-tabs",
+            active_tab="intra-city",
+            className="mb-3",  # space between tab bar and content
         ),
+
+        # Tooltips
+        dbc.Tooltip("Add a single random user to the map", target="add-random-user-btn"),
+        dbc.Tooltip("Remove a specific user by ID", target="remove-user-btn"),
+
         # Intervals
-        dcc.Interval(
-            id="users-refresh-interval",
-            interval=5 * 1000,
-            n_intervals=0,
-        ),
-        dcc.Interval(
-            id="stats-refresh-interval",
-            interval=1 * 1000,
-            n_intervals=0,
-        ),
+        dcc.Interval(id="users-refresh-interval", interval=5 * 1000, n_intervals=0),
+        dcc.Interval(id="stats-refresh-interval", interval=2 * 1000, n_intervals=0),
     ],
     fluid=True,
-    style={"height": "100vh"},  # make container full screen height
+    style={"height": "100vh", "padding": "20px"},
 )
