@@ -276,8 +276,8 @@ main_layout = dbc.Container(
         dbc.Tooltip("Remove a specific user by ID", target="remove-user-btn"),
 
         # Intervals
-        dcc.Interval(id="users-refresh-interval", interval=5 * 1000, n_intervals=0),
-        dcc.Interval(id="stats-refresh-interval", interval=2 * 1000, n_intervals=0),
+        dcc.Interval(id="users-refresh-interval", interval=5000, n_intervals=0),
+        dcc.Interval(id="stats-refresh-interval", interval=2000, n_intervals=0),
     ],
     fluid=True,
     style={"height": "100vh", "padding": "20px"},

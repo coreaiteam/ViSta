@@ -7,8 +7,8 @@ from .data_ingestion import DataIngestionFactory, DataSourceType
 from .data_storage import DataStorage
 from .engine.MPBucketingEngine import ClusteringEngine
 from .output_handlers import OutputHandlerFactory, OutputHandler
-from .models import OutputMessage, UserLocation
-from ..config import PLACES
+from .models import OutputMessage, UserLocation, ClusterGroup
+from ..config import PLACES, PLACE
 
 logging.basicConfig(
     level=logging.INFO,
@@ -190,6 +190,10 @@ class ClusteringService:
         """Get group information for a specific user"""
         group = self.data_storage.get_group_by_user(user_id)
         return group.to_dict() if group else None
+    
+    def get_user_by_id(self, user_id: int) -> Optional[UserLocation]:
+        """Get user by its user id"""
+        return self.data_storage.get_user_by_id(user_id)
 
     def get_user_companions(self, user_id: int) -> Optional[Dict]:
         """Get companions for a specific user"""
@@ -206,10 +210,10 @@ class ClusteringService:
             "created_at": group.created_at.isoformat(),
         }
 
-    def get_all_active_groups(self) -> List[Dict]:
+    def get_all_active_groups(self) -> List[ClusterGroup]:
         """Get all active groups"""
         with self.data_storage._lock:
-            return [group.to_dict() for group in self.data_storage.cluster_groups.values()]
+            return list(self.data_storage.cluster_groups.values())
 
     def get_service_status(self) -> Dict:
         """Get current service status"""
@@ -228,7 +232,11 @@ class ClusteringService:
         
     def get_all_users(self)-> List[UserLocation]: 
         """Get all active users"""
-        return [user.to_dict() for user in self.data_storage.get_all_users()]
+        return self.data_storage.get_all_users()
+    
+    def get_all_user_to_group(self)-> List[Dict]: 
+        """Get all active users"""
+        return self.data_storage.get_all_user_to_group()
     
     def get_next_user_id(self)-> int:
         """Get user id for new user"""

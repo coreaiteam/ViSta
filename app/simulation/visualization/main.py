@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from ..metrics import evaluate_user_clustering
 import dash
-from dash import Input, Output, State, html, callback
+from dash import Input, Output, State, html, callback, ALL
 from dash.exceptions import PreventUpdate
 import dash_leaflet as dl
 import dash_bootstrap_components as dbc
@@ -14,6 +14,7 @@ from .layouts import main_layout
 from .components import map_handler
 from app.service.models import UserLocation
 from ...service.service import get_clustering_service
+
 
 # App Initialization
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY, dbc.icons.BOOTSTRAP])
@@ -422,14 +423,6 @@ def save_data(n_clicks):
 def capture_map_click(click_data, click_mode):
     """
     Callback to capture map clicks and update temporary coordinates with markers.
-
-    Args:
-        click_data: Data from map click event
-        click_mode: Current click mode (origin/destination)
-        temp_coords: Temporary coordinates stored in the app
-
-    Returns:
-        Tuple of updated coordinates and updated map with temporary markers
     """
     if not click_data:
         raise PreventUpdate
@@ -488,12 +481,6 @@ def capture_map_click(click_data, click_mode):
 def add_random_user(n_clicks):
     """
     Callback to add a new random user to the map.
-
-    Args:
-        n_clicks: Number of clicks on random user button
-
-    Returns:
-        Updated map with new random user
     """
     if not n_clicks:
         raise PreventUpdate
@@ -505,7 +492,10 @@ def add_random_user(n_clicks):
 
     users = clustering_service.get_all_users()
     clusters = clustering_service.get_all_active_groups()
-    userlayer, cluster_layer =  map_handler.create_users_and_clusters_layer(users=users, clusters=clusters)
+
+
+    userlayer = map_handler.create_users_layer(users=users, clusters=clusters)
+    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
 
     global num_all_data
     num_all_data -= 1
@@ -562,25 +552,6 @@ def add_selected_user(n_clicks):
     return user_layer, cluster_layer, temp_markers
 
 
-@callback(
-    Output("users", "children", allow_duplicate=True),
-    Output("clusters", "children", allow_duplicate=True),
-    Input("users-refresh-interval", "n_intervals"),
-    prevent_initial_call=True,
-)
-def refresh_map(n_intervals):
-    """
-    Periodically refresh the map with updated users and clusters.
-    """
-    users = clustering_service.get_all_users()
-    clusters = clustering_service.get_all_active_groups()
-
-    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(
-        users=users,
-        clusters=clusters
-    )
-    return user_layer, cluster_layer
-
 
 @callback(
     Output("temp-markers", "children", allow_duplicate=True),
@@ -595,6 +566,26 @@ def clear_temp_markers(n_clicks):
     temp_user = {"origin": None, "destination": None}
     temp_markers = []
     return []
+
+
+
+@callback(
+    Output("users", "children", allow_duplicate=True),
+    Output("clusters", "children", allow_duplicate=True),
+    Input("users-refresh-interval", "n_intervals"),
+    prevent_initial_call=True,
+)
+def refresh_map(n_intervals):
+    """
+    Periodically refresh the map with updated users and clusters.
+    """
+    users = clustering_service.get_all_users()
+    clusters = clustering_service.get_all_active_groups()
+
+    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
+    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
+
+    return user_layer, cluster_layer
 
 
 @callback(
@@ -641,8 +632,8 @@ def update_stats(n_intervals):
 
 @callback(
     [
-        Output("users", "children", allow_duplicate=True),
-        Output("clusters", "children", allow_duplicate=True),
+    Output("users", "children", allow_duplicate=True),
+    Output("clusters", "children", allow_duplicate=True),
     ],
     Input("remove-user-btn", "n_clicks"),
     State("remove-user-id", "value"),
@@ -655,24 +646,22 @@ def remove_user(n_clicks, user_id):
     if not user_id:
         raise PreventUpdate
 
-    print(f"user id : {user_id}")
-    
     clustering_service.remove_user(user_id)
 
     # refresh data
     users = clustering_service.get_all_users()
     clusters = clustering_service.get_all_active_groups()
-    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users, clusters)
-
+    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
+    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
     return user_layer, cluster_layer
 
 
 
 @callback(
     [
-        Output("users", "children", allow_duplicate=True),
-        Output("clusters", "children", allow_duplicate=True),
-        Output("bulk-user-info", "children"),
+    Output("users", "children", allow_duplicate=True),
+    Output("clusters", "children", allow_duplicate=True),
+    Output("bulk-user-info", "children"),
     ],
     Input("add-multiple-users-btn", "n_clicks"),
     State("bulk-user-count", "value"),
@@ -697,7 +686,10 @@ def add_multiple_users(n_clicks, count):
     # refresh data
     users = clustering_service.get_all_users()
     clusters = clustering_service.get_all_active_groups()
-    user_layer, cluster_layer = map_handler.create_users_and_clusters_layer(users, clusters)
+
+    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
+    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
+
     num_all_data -= users_added
     info_text = f"Remaining number of users: {num_all_data}"
 

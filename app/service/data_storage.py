@@ -13,6 +13,7 @@ class DataStorage:
         self.cluster_groups: Dict[str, ClusterGroup] = {}
         self.user_to_group: Dict[int, str] = {}
         self._update_queue = Queue()
+        
 
     def add_user_location(self, user_location: UserLocation) -> None:
         with self._lock:
@@ -92,6 +93,15 @@ class DataStorage:
     def get_all_users(self) -> List[UserLocation]:
         with self._lock:
             return list(self.user_locations.values())
+        
+        
+    def get_user_by_id(self, user_id: int) -> Optional[UserLocation]:
+        with self._lock:
+            return self.user_locations.get(user_id)
+
+    def get_all_user_to_group(self) -> List[Dict]:
+        with self._lock:
+            return self.user_to_group
 
     def get_group_by_id(self, group_id: str) -> Optional[ClusterGroup]:
         with self._lock:
