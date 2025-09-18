@@ -10,6 +10,7 @@ import networkx as nx
 from geopy.distance import great_circle
 import time
 import logging
+from datetime import datetime
 from functools import lru_cache
 
 # Import your models
@@ -55,6 +56,23 @@ class ClusterMetrics:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary for easy serialization"""
+        # Handle centroid serialization
+        def serialize_centroid(centroid):
+            if hasattr(centroid, 'to_dict'):
+                return centroid.to_dict()
+            elif hasattr(centroid, 'user_id'):
+                # Basic centroid object
+                return {
+                    'user_id': getattr(centroid, 'user_id', -1),
+                    'origin_lat': getattr(centroid, 'origin_lat', 0.0),
+                    'origin_lng': getattr(centroid, 'origin_lng', 0.0),
+                    'destination_lat': getattr(centroid, 'destination_lat', 0.0),
+                    'destination_lng': getattr(centroid, 'destination_lng', 0.0),
+                    'is_algorithm_centroid': True
+                }
+            else:
+                return str(centroid)  # Fallback
+        
         return {
             'combined_metrics': {
                 'sse': self.combined_sse,
@@ -78,11 +96,42 @@ class ClusterMetrics:
             },
             'cluster_sizes': self.cluster_sizes,
             'inter_cluster_distances': self.inter_cluster_distances,
-            'origin_centroids': {cid: centroid.to_dict() for cid, centroid in self.origin_centroids.items()},
-            'destination_centroids': {cid: centroid.to_dict() for cid, centroid in self.destination_centroids.items()},
+            'origin_centroids': {cid: serialize_centroid(centroid) for cid, centroid in self.origin_centroids.items()},
+            'destination_centroids': {cid: serialize_centroid(centroid) for cid, centroid in self.destination_centroids.items()},
             'computation_time': self.computation_time,
-            'alpha_weight': self.alpha
+            'alpha_weight': self.alpha,
+            'centroid_method': getattr(self, 'centroid_method', 'unknown')
         }
+    # def to_dict(self) -> Dict[str, Any]:
+    #     """Convert metrics to dictionary for easy serialization"""
+    #     return {
+    #         'combined_metrics': {
+    #             'sse': self.combined_sse,
+    #             'intra_cluster': self.combined_intra_cluster,
+    #             'silhouette_score': self.combined_silhouette,
+    #             'dun_index': self.dun_index,
+    #         },
+    #         'origin_metrics': {
+    #             'sse': self.origin_metrics.sse,
+    #             'intra_cluster': self.origin_metrics.intra_cluster,
+    #             'max_radius': self.origin_metrics.max_radius,
+    #             'average_radius': self.origin_metrics.average_radius,
+    #             'silhouette_score': self.origin_metrics.silhouette_score,
+    #         },
+    #         'destination_metrics': {
+    #             'sse': self.destination_metrics.sse,
+    #             'intra_cluster': self.destination_metrics.intra_cluster,
+    #             'max_radius': self.destination_metrics.max_radius,
+    #             'average_radius': self.destination_metrics.average_radius,
+    #             'silhouette_score': self.destination_metrics.silhouette_score,
+    #         },
+    #         'cluster_sizes': self.cluster_sizes,
+    #         'inter_cluster_distances': self.inter_cluster_distances,
+    #         'origin_centroids': {cid: centroid.to_dict() for cid, centroid in self.origin_centroids.items()},
+    #         'destination_centroids': {cid: centroid.to_dict() for cid, centroid in self.destination_centroids.items()},
+    #         'computation_time': self.computation_time,
+    #         'alpha_weight': self.alpha
+    #     }
 # class OSMnxDistanceCalculator:
 #     """Handles OSMnx graph operations and distance calculations"""
     
@@ -300,38 +349,106 @@ class OSMnxDistanceCalculator:
         except Exception as e:
             logger.error(f"Error calculating walking distance: {e}")
             return great_circle((lat1, lng1), (lat2, lng2)).meters
+# class ClusterEvaluator:
+#     """Main class for evaluating clustering performance"""
+    
+#     def __init__(self, user_locations: List[Any], clusters: List[List[Any]], 
+#                  alpha: float = 1.0, 
+#                  centroid_method: str = "medoid",
+#                  graph: Optional[nx.MultiDiGraph] = None,
+#                  place_name: Optional[str] = None):
+#         """
+#         Initialize evaluator with flexible graph handling
+        
+#         Args:
+#             user_locations: Complete list of all UserLocation objects
+#             clusters: List of clusters, each cluster is a list of UserLocation objects
+#             alpha: Weight for destination metrics in combined scores
+#             centroid_method: Method for finding centroids
+#             graph: Pre-loaded OSMnx graph (optional)
+#             place_name: Place name to download graph if not provided
+#         """
+#         self.start_time = time.time()
+#         self.user_locations = user_locations
+#         self.clusters = clusters
+#         self.alpha = alpha
+#         self.centroid_method = centroid_method
+#         self.unique_labels = list(range(len(clusters)))
+        
+#         # Initialize OSMnx distance calculator
+#         self.distance_calculator = OSMnxDistanceCalculator(
+#             graph=graph,
+#             network_type='walk',
+#             place_name=place_name
+#         )
+        
+#         # Create mapping and labels
+#         self.user_to_cluster, self.labels = self._create_label_mapping()
+#         self.cluster_indices = self._group_indices_by_cluster()
+        
+#         # Compute distance matrices for both origin and destination
+#         logger.info("Computing origin distance matrix...")
+#         self.origin_distance_matrix = self._compute_distance_matrix('origin')
+        
+#         logger.info("Computing destination distance matrix...")
+#         self.destination_distance_matrix = self._compute_distance_matrix('destination')
+#         # print(f'\n origin_distance_matrix = {self.origin_distance_matrix}')
+#         # print(f'\n destination_distance_matrix = {self.destination_distance_matrix}')
+        
+#         # # Find centroids for both origin and destination
+#         # self.origin_centroids = self._find_cluster_centroids('origin')
+#         # self.destination_centroids = self._find_cluster_centroids('destination')
+        
+#         # Find centroids using selected method
+#         if centroid_method == "optimal":
+#             self.origin_centroids = self._find_cluster_centroids('origin')
+#             self.destination_centroids = self._find_cluster_centroids('destination')
+#         elif centroid_method == "approximate":
+#             self.origin_centroids = self._find_cluster_centroids_approximate('origin')
+#             self.destination_centroids = self._find_cluster_centroids_approximate('destination')
+#         else:  # "medoid"
+#             self.origin_centroids = self._find_cluster_centroids_medoid('origin')
+#             self.destination_centroids = self._find_cluster_centroids_medoid('destination')
+            
+#         # Compute point-to-centroid distances
+#         self.origin_point_dists = self._compute_point_to_centroid_distances('origin')
+#         self.destination_point_dists = self._compute_point_to_centroid_distances('destination')
+#         # print(f'\n origin_point_dists = {self.origin_point_dists}')
+#         # print(f'\n destination_point_dists = {self.destination_point_dists}')
+        
+#         self.computation_time = time.time() - self.start_time
+#         logger.info(f"Cluster evaluation completed in {self.computation_time:.2f} seconds")
+    
 class ClusterEvaluator:
-    """Main class for evaluating clustering performance"""
+    """Main class for evaluating clustering performance with meeting point support"""
     
     def __init__(self, user_locations: List[Any], clusters: List[List[Any]], 
-                 alpha: float = 1.0, 
-                 centroid_method: str = "medoid",
                  graph: Optional[nx.MultiDiGraph] = None,
-                 place_name: Optional[str] = None):
+                 meeting_points: Optional[Dict[int, Dict[str, Tuple[float, float]]]] = None,
+                 alpha: float = 1.0, 
+                 centroid_method: str = "algorithm"):
         """
-        Initialize evaluator with flexible graph handling
+        Initialize evaluator with meeting point support
         
         Args:
             user_locations: Complete list of all UserLocation objects
             clusters: List of clusters, each cluster is a list of UserLocation objects
+            graph: Pre-loaded OSMnx graph
+            meeting_points: Dictionary mapping cluster index to meeting points
+                          {cluster_id: {'origin': (lat, lng), 'destination': (lat, lng)}}
             alpha: Weight for destination metrics in combined scores
-            centroid_method: Method for finding centroids
-            graph: Pre-loaded OSMnx graph (optional)
-            place_name: Place name to download graph if not provided
+            centroid_method: "algorithm" (use provided meeting points) or "calculate"
         """
         self.start_time = time.time()
         self.user_locations = user_locations
         self.clusters = clusters
         self.alpha = alpha
         self.centroid_method = centroid_method
+        self.meeting_points = meeting_points or {}
         self.unique_labels = list(range(len(clusters)))
         
         # Initialize OSMnx distance calculator
-        self.distance_calculator = OSMnxDistanceCalculator(
-            graph=graph,
-            network_type='walk',
-            place_name=place_name
-        )
+        self.distance_calculator = OSMnxDistanceCalculator(graph=graph)
         
         # Create mapping and labels
         self.user_to_cluster, self.labels = self._create_label_mapping()
@@ -343,33 +460,163 @@ class ClusterEvaluator:
         
         logger.info("Computing destination distance matrix...")
         self.destination_distance_matrix = self._compute_distance_matrix('destination')
-        # print(f'\n origin_distance_matrix = {self.origin_distance_matrix}')
-        # print(f'\n destination_distance_matrix = {self.destination_distance_matrix}')
         
-        # # Find centroids for both origin and destination
-        # self.origin_centroids = self._find_cluster_centroids('origin')
-        # self.destination_centroids = self._find_cluster_centroids('destination')
+        # Find centroids - use algorithm meeting points if available
+        self.origin_centroids = self._find_cluster_centroids('origin')
+        self.destination_centroids = self._find_cluster_centroids('destination')
         
-        # Find centroids using selected method
-        if centroid_method == "optimal":
-            self.origin_centroids = self._find_cluster_centroids('origin')
-            self.destination_centroids = self._find_cluster_centroids('destination')
-        elif centroid_method == "approximate":
-            self.origin_centroids = self._find_cluster_centroids_approximate('origin')
-            self.destination_centroids = self._find_cluster_centroids_approximate('destination')
-        else:  # "medoid"
-            self.origin_centroids = self._find_cluster_centroids_medoid('origin')
-            self.destination_centroids = self._find_cluster_centroids_medoid('destination')
-            
         # Compute point-to-centroid distances
         self.origin_point_dists = self._compute_point_to_centroid_distances('origin')
         self.destination_point_dists = self._compute_point_to_centroid_distances('destination')
-        # print(f'\n origin_point_dists = {self.origin_point_dists}')
-        # print(f'\n destination_point_dists = {self.destination_point_dists}')
         
         self.computation_time = time.time() - self.start_time
         logger.info(f"Cluster evaluation completed in {self.computation_time:.2f} seconds")
+        
+    # def _find_cluster_centroids(self, point_type: str) -> Dict[int, UserLocation]:
+    #     """Find centroids using Dijkstra algorithm for origin or destination"""
+    #     centroids = {}
+    #     distance_matrix = self.origin_distance_matrix if point_type == 'origin' else self.destination_distance_matrix
+        
+    #     for cluster_id, indices in self.cluster_indices.items():
+    #         if not indices:
+    #             continue
+                
+    #         min_total_dist = float('inf')
+    #         centroid_idx = -1
+            
+    #         # Dijkstra-based centroid: point with minimum total distance to others
+    #         for i in indices:
+    #             total_dist = np.sum(distance_matrix[i, indices])
+    #             if total_dist < min_total_dist:
+    #                 min_total_dist = total_dist
+    #                 centroid_idx = i
+            
+    #         if centroid_idx != -1:
+    #             centroids[cluster_id] = self.user_locations[centroid_idx]
+        
+    #     logger.info(f"Found {len(centroids)} {point_type} centroids")
+    #     return centroids
+    #### This function execute the medoid instead of centroid!
     
+    # def _find_cluster_centroids(self, point_type: str) -> Dict[int, Any]:
+    #     """Find true centroids that minimize total walking distance to cluster points"""
+    #     centroids = {}
+        
+    #     for cluster_id, indices in self.cluster_indices.items():
+    #         if not indices:
+    #             continue
+                
+    #         if len(indices) == 1:
+    #             # Single point cluster - the point is its own centroid
+    #             centroids[cluster_id] = self.user_locations[indices[0]]
+    #             continue
+            
+    #         # Get all points in the cluster
+    #         cluster_points = []
+    #         for idx in indices:
+    #             user = self.user_locations[idx]
+    #             if point_type == 'origin':
+    #                 cluster_points.append((user.origin_lat, user.origin_lng))
+    #             else:
+    #                 cluster_points.append((user.destination_lat, user.destination_lng))
+            
+    #         # Find centroid using optimization
+    #         centroid_coords = self._find_optimal_centroid(cluster_points, point_type)
+            
+    #         # Find the closest user location to the optimal centroid
+    #         closest_user = self._find_closest_user_to_point(centroid_coords, indices, point_type)
+            
+    #         centroids[cluster_id] = closest_user
+        
+    #     logger.info(f"Found {len(centroids)} {point_type} centroids")
+    #     return centroids
+    
+    # Updated for MPbucketing 
+    def _find_cluster_centroids(self, point_type: str) -> Dict[int, Any]:
+        """Find centroids using algorithm meeting points or fallback to calculation"""
+        centroids = {}
+        
+        for cluster_id, indices in self.cluster_indices.items():
+            if not indices:
+                continue
+                
+            # Use algorithm meeting points if available
+            if (self.centroid_method == "algorithm" and 
+                cluster_id in self.meeting_points and 
+                point_type in self.meeting_points[cluster_id]):
+                
+                meeting_point = self.meeting_points[cluster_id][point_type]
+                
+                # Create a mock UserLocation object for the meeting point
+                centroid_user = self._create_centroid_user(meeting_point, point_type, cluster_id)
+                centroids[cluster_id] = centroid_user
+                logger.debug(f"Using algorithm meeting point for cluster {cluster_id} {point_type}")
+                
+            else:
+                # Fallback to calculated centroid
+                distance_matrix = self.origin_distance_matrix if point_type == 'origin' else self.destination_distance_matrix
+                
+                min_total_dist = float('inf')
+                centroid_idx = -1
+                
+                for i in indices:
+                    total_dist = np.sum(distance_matrix[i, indices])
+                    if total_dist < min_total_dist:
+                        min_total_dist = total_dist
+                        centroid_idx = i
+                
+                if centroid_idx != -1:
+                    centroids[cluster_id] = self.user_locations[centroid_idx]
+                    logger.debug(f"Using calculated centroid for cluster {cluster_id} {point_type}")
+        
+        logger.info(f"Found {len(centroids)} {point_type} centroids "
+                   f"({self.centroid_method} method)")
+        return centroids
+    
+    def _create_centroid_user(self, meeting_point: Tuple[float, float], 
+                            point_type: str, cluster_id: int) -> Any:
+        """Create a mock UserLocation object for algorithm meeting points"""
+        try:
+            # Try to create a proper UserLocation object
+            if point_type == 'origin':
+                return UserLocation(
+                    user_id=-cluster_id,  # Negative ID to indicate algorithm centroid
+                    origin_lat=meeting_point[0],
+                    origin_lng=meeting_point[1],
+                    destination_lat=0.0,  # Dummy values
+                    destination_lng=0.0,
+                    stored_at=datetime.now(),
+                    status="CENTROID"
+                )
+            else:
+                return UserLocation(
+                    user_id=-cluster_id,  # Negative ID to indicate algorithm centroid
+                    origin_lat=0.0,  # Dummy values
+                    origin_lng=0.0,
+                    destination_lat=meeting_point[0],
+                    destination_lng=meeting_point[1],
+                    stored_at=datetime.now(),
+                    status="CENTROID"
+                )
+        except:
+            # Fallback: create a simple object with the required attributes
+            class MockCentroid:
+                def __init__(self, meeting_point, point_type, cluster_id):
+                    if point_type == 'origin':
+                        self.origin_lat = meeting_point[0]
+                        self.origin_lng = meeting_point[1]
+                        self.destination_lat = 0.0
+                        self.destination_lng = 0.0
+                    else:
+                        self.origin_lat = 0.0
+                        self.origin_lng = 0.0
+                        self.destination_lat = meeting_point[0]
+                        self.destination_lng = meeting_point[1]
+                    self.user_id = -cluster_id
+            
+            return MockCentroid(meeting_point, point_type, cluster_id)
+    
+        
     def _create_label_mapping(self) -> Tuple[Dict[int, int], np.ndarray]:
         """Create mapping from user_id to cluster label and labels array"""
         user_to_cluster = {}
@@ -426,64 +673,6 @@ class ClusterEvaluator:
         logger.info(f"{point_type.capitalize()} distance matrix computation completed")
         return dist_matrix
     
-    # def _find_cluster_centroids(self, point_type: str) -> Dict[int, UserLocation]:
-    #     """Find centroids using Dijkstra algorithm for origin or destination"""
-    #     centroids = {}
-    #     distance_matrix = self.origin_distance_matrix if point_type == 'origin' else self.destination_distance_matrix
-        
-    #     for cluster_id, indices in self.cluster_indices.items():
-    #         if not indices:
-    #             continue
-                
-    #         min_total_dist = float('inf')
-    #         centroid_idx = -1
-            
-    #         # Dijkstra-based centroid: point with minimum total distance to others
-    #         for i in indices:
-    #             total_dist = np.sum(distance_matrix[i, indices])
-    #             if total_dist < min_total_dist:
-    #                 min_total_dist = total_dist
-    #                 centroid_idx = i
-            
-    #         if centroid_idx != -1:
-    #             centroids[cluster_id] = self.user_locations[centroid_idx]
-        
-    #     logger.info(f"Found {len(centroids)} {point_type} centroids")
-    #     return centroids
-    #### This function execute the medoid instead of centroid!
-    
-    def _find_cluster_centroids(self, point_type: str) -> Dict[int, Any]:
-        """Find true centroids that minimize total walking distance to cluster points"""
-        centroids = {}
-        
-        for cluster_id, indices in self.cluster_indices.items():
-            if not indices:
-                continue
-                
-            if len(indices) == 1:
-                # Single point cluster - the point is its own centroid
-                centroids[cluster_id] = self.user_locations[indices[0]]
-                continue
-            
-            # Get all points in the cluster
-            cluster_points = []
-            for idx in indices:
-                user = self.user_locations[idx]
-                if point_type == 'origin':
-                    cluster_points.append((user.origin_lat, user.origin_lng))
-                else:
-                    cluster_points.append((user.destination_lat, user.destination_lng))
-            
-            # Find centroid using optimization
-            centroid_coords = self._find_optimal_centroid(cluster_points, point_type)
-            
-            # Find the closest user location to the optimal centroid
-            closest_user = self._find_closest_user_to_point(centroid_coords, indices, point_type)
-            
-            centroids[cluster_id] = closest_user
-        
-        logger.info(f"Found {len(centroids)} {point_type} centroids")
-        return centroids
     
     def _find_optimal_centroid(self, points: List[Tuple[float, float]], point_type: str) -> Tuple[float, float]:
         """Find the optimal centroid coordinates that minimize total walking distance"""
@@ -612,6 +801,39 @@ class ClusterEvaluator:
         
         return centroids
     
+    # def _compute_point_to_centroid_distances(self, point_type: str) -> Dict[int, Dict[int, float]]:
+    #     """Compute distances from points to their cluster centroids"""
+    #     point_dists = {}
+    #     centroids = self.origin_centroids if point_type == 'origin' else self.destination_centroids
+        
+    #     for cluster_id, indices in self.cluster_indices.items():
+    #         if cluster_id not in centroids:
+    #             continue
+                
+    #         centroid_user = centroids[cluster_id]
+    #         point_dists[cluster_id] = {}
+            
+    #         for point_idx in indices:
+    #             point_user = self.user_locations[point_idx]
+                
+    #             if point_type == 'origin':
+    #                 point_coords = (point_user.origin_lat, point_user.origin_lng)
+    #                 centroid_coords = (centroid_user.origin_lat, centroid_user.origin_lng)
+    #             else:
+    #                 point_coords = (point_user.destination_lat, point_user.destination_lng)
+    #                 centroid_coords = (centroid_user.destination_lat, centroid_user.destination_lng)
+                
+    #             distance_meters = self.distance_calculator.get_walking_distance(
+    #                 point_coords[0], point_coords[1], 
+    #                 centroid_coords[0], centroid_coords[1], 
+    #                 point_type
+    #             )
+                
+    #             point_dists[cluster_id][point_idx] = distance_meters
+        
+    #     return point_dists
+    
+    # Updated for MPbucketing 
     def _compute_point_to_centroid_distances(self, point_type: str) -> Dict[int, Dict[int, float]]:
         """Compute distances from points to their cluster centroids"""
         point_dists = {}
@@ -628,11 +850,21 @@ class ClusterEvaluator:
                 point_user = self.user_locations[point_idx]
                 
                 if point_type == 'origin':
-                    point_coords = (point_user.origin_lat, point_user.origin_lng)
-                    centroid_coords = (centroid_user.origin_lat, centroid_user.origin_lng)
+                    if hasattr(centroid_user, 'origin_lat') and hasattr(centroid_user, 'origin_lng'):
+                        point_coords = (point_user.origin_lat, point_user.origin_lng)
+                        centroid_coords = (centroid_user.origin_lat, centroid_user.origin_lng)
+                    else:
+                        # Handle mock centroid objects
+                        point_coords = (point_user.origin_lat, point_user.origin_lng)
+                        centroid_coords = (centroid_user.origin_lat, centroid_user.origin_lng)
                 else:
-                    point_coords = (point_user.destination_lat, point_user.destination_lng)
-                    centroid_coords = (centroid_user.destination_lat, centroid_user.destination_lng)
+                    if hasattr(centroid_user, 'destination_lat') and hasattr(centroid_user, 'destination_lng'):
+                        point_coords = (point_user.destination_lat, point_user.destination_lng)
+                        centroid_coords = (centroid_user.destination_lat, centroid_user.destination_lng)
+                    else:
+                        # Handle mock centroid objects
+                        point_coords = (point_user.destination_lat, point_user.destination_lng)
+                        centroid_coords = (centroid_user.destination_lat, centroid_user.destination_lng)
                 
                 distance_meters = self.distance_calculator.get_walking_distance(
                     point_coords[0], point_coords[1], 
@@ -770,22 +1002,52 @@ class ClusterEvaluator:
         )
 
 # Main function for easy access
+# def evaluate_user_clustering(user_locations: List[Any], 
+#                            clusters: List[List[Any]],
+#                            alpha: float = 1.0,
+#                            centroid_method: str = "medoid",
+#                            graph: Optional[nx.MultiDiGraph] = None,
+#                            place_name: Optional[str] = "Savojbolagh County, Alborz Province, Iran") -> ClusterMetrics:
+#     """
+#     Evaluate clustering with flexible graph handling
+    
+#     Args:
+#         user_locations: Complete list of all UserLocation objects
+#         clusters: List of clusters, each cluster is a list of UserLocation objects
+#         alpha: Weight for destination metrics in combined scores
+#         centroid_method: Method for finding centroids
+#         graph: Pre-loaded OSMnx graph (optional)
+#         place_name: Place name to download graph if not provided
+    
+#     Returns:
+#         Comprehensive clustering metrics
+#     """
+#     evaluator = ClusterEvaluator(
+#         user_locations=user_locations,
+#         clusters=clusters,
+#         alpha=alpha,
+#         centroid_method=centroid_method,
+#         graph=graph,
+#         place_name=place_name
+#     )
+#     return evaluator.evaluate()
+
 def evaluate_user_clustering(user_locations: List[Any], 
                            clusters: List[List[Any]],
-                           alpha: float = 1.0,
-                           centroid_method: str = "medoid",
                            graph: Optional[nx.MultiDiGraph] = None,
-                           place_name: Optional[str] = "Savojbolagh County, Alborz Province, Iran") -> ClusterMetrics:
+                           meeting_points: Optional[Dict[int, Dict[str, Tuple[float, float]]]] = None,
+                           alpha: float = 1.0,
+                           centroid_method: str = "algorithm") -> ClusterMetrics:
     """
-    Evaluate clustering with flexible graph handling
+    Evaluate clustering with algorithm meeting point support
     
     Args:
         user_locations: Complete list of all UserLocation objects
         clusters: List of clusters, each cluster is a list of UserLocation objects
+        graph: Pre-loaded OSMnx graph
+        meeting_points: Dictionary mapping cluster index to meeting points
         alpha: Weight for destination metrics in combined scores
-        centroid_method: Method for finding centroids
-        graph: Pre-loaded OSMnx graph (optional)
-        place_name: Place name to download graph if not provided
+        centroid_method: "algorithm" (use meeting points) or "calculate" (recalculate)
     
     Returns:
         Comprehensive clustering metrics
@@ -793,9 +1055,9 @@ def evaluate_user_clustering(user_locations: List[Any],
     evaluator = ClusterEvaluator(
         user_locations=user_locations,
         clusters=clusters,
-        alpha=alpha,
-        centroid_method=centroid_method,
         graph=graph,
-        place_name=place_name
+        meeting_points=meeting_points,
+        alpha=alpha,
+        centroid_method=centroid_method
     )
     return evaluator.evaluate()

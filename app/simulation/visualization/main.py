@@ -219,12 +219,12 @@ def save_users_and_metrics():
             print("No users to save")
             return None
         
-        # Save users to JSON
-        users_filename = SAVE_DIR / f"users_{timestamp}.json"
-        with open(users_filename, 'w') as f:
-            json.dump(users_dict, f, indent=2)
+        # # Save users to JSON
+        # users_filename = SAVE_DIR / f"users_{timestamp}.json"
+        # with open(users_filename, 'w') as f:
+        #     json.dump(users_dict, f, indent=2)
         
-        print(f"Saved {len(users_dict)} users to {users_filename}")
+        # print(f"Saved {len(users_dict)} users to {users_filename}")
         
         # Convert dicts to UserLocation objects for metrics
         users_objects = []
@@ -246,7 +246,7 @@ def save_users_and_metrics():
         
         # Get clusters for metrics evaluation
         clusters = clustering_service.get_all_active_groups()
-        
+        print(clusters)
         if not clusters:
             print("No clusters found from service")
             return None
@@ -255,8 +255,9 @@ def save_users_and_metrics():
         
         # Convert clusters to the format expected by metrics evaluation
         cluster_lists = []
+        meeting_points = {}  # {cluster_id: {'origin': (lat, lng), 'destination': (lat, lng)}}
         
-        for cluster_dict in clusters:
+        for cluster_idx, cluster_dict in enumerate(clusters):
             cluster_users = []
             
             # Extract users from the cluster dictionary
@@ -266,26 +267,27 @@ def save_users_and_metrics():
                     user_obj = next((u for u in users_objects if u.user_id == user_dict['user_id']), None)
                     if user_obj:
                         cluster_users.append(user_obj)
-                    else:
-                        # If user object not found, create one from the user dict
-                        try:
-                            new_user_obj = UserLocation(
-                                user_id=user_dict['user_id'],
-                                origin_lat=user_dict['origin_lat'],
-                                origin_lng=user_dict['origin_lng'],
-                                destination_lat=user_dict['destination_lat'],
-                                destination_lng=user_dict['destination_lng'],
-                                stored_at=datetime.fromisoformat(user_dict['stored_at'].replace('Z', '+00:00')) if isinstance(user_dict['stored_at'], str) else user_dict['stored_at'],
-                                status=user_dict.get('status', 'PENDING')
-                            )
-                            cluster_users.append(new_user_obj)
-                        except (KeyError, ValueError) as e:
-                            print(f"Error creating user object from cluster data: {e}")
-                            continue
             
             if cluster_users:
                 cluster_lists.append(cluster_users)
-                # print(f"Cluster {cluster_dict.get('group_id', 'unknown')}: {len(cluster_users)} users")
+                
+                # Extract meeting points from algorithm
+                if 'meeting_point_origin' in cluster_dict and 'meeting_point_destination' in cluster_dict:
+                    try:
+                        # Convert numpy types to regular Python floats
+                        origin_mp = cluster_dict['meeting_point_origin']
+                        dest_mp = cluster_dict['meeting_point_destination']
+                        
+                        meeting_points[cluster_idx] = {
+                            'origin': (float(origin_mp[0]), float(origin_mp[1])),
+                            'destination': (float(dest_mp[0]), float(dest_mp[1]))
+                        }
+                        print(f"Cluster {cluster_idx}: using algorithm meeting points")
+                    except (TypeError, IndexError) as e:
+                        print(f"Error extracting meeting points for cluster {cluster_idx}: {e}")
+                        # Fallback to calculated centroids
+                
+                print(f"Cluster {cluster_idx}: {len(cluster_users)} users")
         
         # Evaluate metrics if we have clusters
         if cluster_lists:
@@ -294,12 +296,63 @@ def save_users_and_metrics():
             # Get the graph from clustering service
             graph = clustering_service.clustering_engine.G
             
+            # Use algorithm meeting points if available, otherwise calculate
+            centroid_method = "algorithm" if meeting_points else "calculate"
+            
             metrics = evaluate_user_clustering(
                 user_locations=users_objects,
                 clusters=cluster_lists,
                 graph=graph,
-                alpha=1.0
+                meeting_points=meeting_points,
+                alpha=1.0,
+                centroid_method=centroid_method
             )
+        # cluster_lists = []
+        
+        # for cluster_dict in clusters:
+        #     cluster_users = []
+            
+        #     # Extract users from the cluster dictionary
+        #     if 'users' in cluster_dict and isinstance(cluster_dict['users'], list):
+        #         for user_dict in cluster_dict['users']:
+        #             # Find the corresponding UserLocation object
+        #             user_obj = next((u for u in users_objects if u.user_id == user_dict['user_id']), None)
+        #             if user_obj:
+        #                 cluster_users.append(user_obj)
+        #             else:
+        #                 # If user object not found, create one from the user dict
+        #                 try:
+        #                     new_user_obj = UserLocation(
+        #                         user_id=user_dict['user_id'],
+        #                         origin_lat=user_dict['origin_lat'],
+        #                         origin_lng=user_dict['origin_lng'],
+        #                         destination_lat=user_dict['destination_lat'],
+        #                         destination_lng=user_dict['destination_lng'],
+        #                         stored_at=datetime.fromisoformat(user_dict['stored_at'].replace('Z', '+00:00')) if isinstance(user_dict['stored_at'], str) else user_dict['stored_at'],
+        #                         status=user_dict.get('status', 'PENDING')
+        #                     )
+        #                     cluster_users.append(new_user_obj)
+        #                 except (KeyError, ValueError) as e:
+        #                     print(f"Error creating user object from cluster data: {e}")
+        #                     continue
+            
+        #     if cluster_users:
+        #         cluster_lists.append(cluster_users)
+        #         # print(f"Cluster {cluster_dict.get('group_id', 'unknown')}: {len(cluster_users)} users")
+        
+        # # Evaluate metrics if we have clusters
+        # if cluster_lists:
+        #     print(f"Prepared {len(cluster_lists)} clusters for metrics evaluation")
+            
+        #     # Get the graph from clustering service
+        #     graph = clustering_service.clustering_engine.G
+            
+        #     metrics = evaluate_user_clustering(
+        #         user_locations=users_objects,
+        #         clusters=cluster_lists,
+        #         graph=graph,
+        #         alpha=1.0
+        #     )
             
             # Save metrics to JSON
             metrics_filename = SAVE_DIR / f"metrics_{clustering_service.engine_name}_{timestamp}.json"
@@ -323,29 +376,14 @@ def save_users_and_metrics():
             print(f"Cluster sizes: {cluster_sizes}")
             print(f"Average cluster size: {sum(cluster_sizes) / len(cluster_sizes):.2f}")
             
+            # Add meeting point info to metrics
+            metrics_dict = metrics.to_dict()
+            metrics_dict['centroid_method'] = centroid_method
+            metrics_dict['algorithm_meeting_points_used'] = bool(meeting_points)
+            
             return metrics
         else:
             print("No valid clusters could be prepared for metrics evaluation")
-            print("This might happen if user IDs don't match between users and clusters")
-            
-            # Debug: Check user IDs
-            user_ids_from_users = [u.user_id for u in users_objects]
-            user_ids_from_clusters = []
-            for cluster_dict in clusters:
-                if 'users' in cluster_dict:
-                    user_ids_from_clusters.extend([u['user_id'] for u in cluster_dict['users']])
-            
-            print(f"User IDs from users list: {sorted(user_ids_from_users)}")
-            print(f"User IDs from clusters: {sorted(user_ids_from_clusters)}")
-            
-            # Check for missing users
-            missing_in_users = set(user_ids_from_clusters) - set(user_ids_from_users)
-            missing_in_clusters = set(user_ids_from_users) - set(user_ids_from_clusters)
-            
-            if missing_in_users:
-                print(f"Users in clusters but not in users list: {sorted(missing_in_users)}")
-            if missing_in_clusters:
-                print(f"Users in users list but not in clusters: {sorted(missing_in_clusters)}")
         
         return None
         
