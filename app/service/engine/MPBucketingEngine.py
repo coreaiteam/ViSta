@@ -92,7 +92,7 @@ class InternalClusterGroup:
 @dataclass
 class User:
     """A dataclass to represent a user with location and group information."""
-    user_id: int  # Unique identifier for the user
+    user_id: str  # Unique identifier for the user
     user_location: UserLocation  # User's location data
     group: Optional[InternalClusterGroup] = None  # Group the user belongs to, if any
     orig_buckets: Dict[int, float] = field(default_factory=dict)  # k nearest nodes to origin node
@@ -162,8 +162,8 @@ class ClusteringEngine:
         self.nearest_nodes_cache: Dict[int, Dict[int, float]] = {}
         self.ball_tree = None  # BallTree for nearest neighbor search
         self.node_coords = None  # Coordinates of graph nodes
-        self.orig_buckets: Dict[int, Dict[int, Tuple[List[int], float]]] = defaultdict(dict)
-        self.dest_buckets: Dict[int, Dict[int, Tuple[List[int], float]]] = defaultdict(dict)
+        self.orig_buckets: Dict[int, Dict[str, Tuple[List[int], float]]] = defaultdict(dict)
+        self.dest_buckets: Dict[int, Dict[str, Tuple[List[int], float]]] = defaultdict(dict)
         self.users: Dict[int, User] = {}  # Dictionary of users
         self._load_or_compute_graph()  # Load street network graph
         self._build_ball_tree()  # Build BallTree for spatial queries
@@ -541,7 +541,6 @@ class ClusteringEngine:
         # select best candidate based on total_dist (lowest)
         selected = min(scored_candidates, key=lambda x: x[2])
 
-
         members = [main_user] + [self.users[uid] for uid in selected[1] if uid in self.users]
 
         if len(members) == 3:
@@ -631,21 +630,38 @@ class ClusteringEngine:
         user_ids_in_group = [u.user_id for u in group.users]
         users_in_group = [self.users[uid] for uid in user_ids_in_group]
 
-        u1, u2 = users_in_group[0:1]
+        u1, u2 = users_in_group
 
+        min_dist = float('inf')
+        meeting_point_origin = None
         # Find common origin buckets with minimum distances
         common_orig_buckets = {}
         for b, dist1 in u1.orig_buckets.items():
             if b in u2.orig_buckets.keys():
                 dist2 = u2.orig_buckets[b]
-                common_orig_buckets[b] = math.sqrt(dist1**2 + dist2**2) / 2
+                dist = math.sqrt(dist1**2 + dist2**2) / 2
+                common_orig_buckets[b] = dist
 
+                if dist < min_dist:
+                    min_dist = dist
+                    meeting_point_origin = b
+
+        min_dist = float('inf')
+        meeting_point_destination = None
         # Find common destination buckets with minimum distances
         common_dest_buckets = {}
         for b, dist1 in u1.dest_buckets.items():
             if b in u2.dest_buckets.keys():
                 dist2 = u2.dest_buckets[b]
-                common_dest_buckets[b] = math.sqrt(dist1**2 + dist2**2) / 2
+                dist = math.sqrt(dist1**2 + dist2**2) / 2
+                common_dest_buckets[b] = dist
+
+                if dist < min_dist:
+                    min_dist = dist
+                    meeting_point_destination = b
+
+        group.meeting_point_origin = self._get_coords(meeting_point_origin) 
+        group.meeting_point_destination = self._get_coords(meeting_point_destination) 
 
         # Add group to buckets
         for b, dist in common_orig_buckets.items():
@@ -671,7 +687,6 @@ class ClusteringEngine:
         dest_user_buckets, dest_node = self._get_nearest_nodes(user_location.destination_coords)
 
         candidate_users = self._collect_candidate_users(orig_user_buckets, dest_user_buckets)
-
         user = self._create_user(
             user_location,
             orig_user_buckets,
@@ -685,7 +700,7 @@ class ClusteringEngine:
 
         return group
 
-    def remove_user(self, user_location: UserLocation) -> Optional[ClusterGroup]:
+    def remove_user(self, user_id: int) -> Optional[ClusterGroup]:
         """
         Remove a user from the clustering engine and their group.
 
@@ -695,55 +710,51 @@ class ClusteringEngine:
         Returns:
             Optional[ClusterGroup]: The group the user was removed from, or None.
         """
-        user_id = user_location.user_id
         if user_id not in self.users:
             return None
 
         user = self.users[user_id]
         group = user.group
 
-        # Remove user from buckets (if exists as individual)
-        for b in user.orig_buckets:
-            if b in self.orig_buckets and user_id in self.orig_buckets[b]:
-                del self.orig_buckets[b][user_id]
-        for b in user.dest_buckets:
-            if b in self.dest_buckets and user_id in self.dest_buckets[b]:
-                del self.dest_buckets[b][user_id]
-
         # If user is not in a group, simply remove them
         if group is None:
+            # Remove user from buckets (if exists as individual)
+            for b in user.orig_buckets:
+                if b in self.orig_buckets and user_id in self.orig_buckets[b]:
+                    del self.orig_buckets[b][user_id]
+            for b in user.dest_buckets:
+                if b in self.dest_buckets and user_id in self.dest_buckets[b]:
+                    del self.dest_buckets[b][user_id]
+
             del self.users[user_id]
             return None
 
         # Remove user from group
         left_user_id = group.update(user.user_location, remove=True)
 
+        # Remove group from all buckets
+        for b in group.orig_buckets.keys():
+            if group.group_id in self.orig_buckets[b]:
+                del self.orig_buckets[b][group.group_id]
+        for b in group.dest_buckets.keys():
+            if group.group_id in self.dest_buckets[b]:
+                del self.dest_buckets[b][group.group_id]
+
         # If group is expired (only one user left)
         if group.status == "expired":
             left_user = self.users.get(left_user_id)
-            if left_user:
-                # Remove group from all buckets
-                for b in group.orig_buckets.keys():
-                    if group.group_id in self.orig_buckets[b]:
-                        del self.orig_buckets[b][group.group_id]
-                for b in group.dest_buckets.keys():
-                    if group.group_id in self.dest_buckets[b]:
-                        del self.dest_buckets[b][group.group_id]
-                
+            if left_user:                
                 # Add left user as individual
                 self._add_user_to_buckets(left_user)
                 left_user.update_group(None)
             
-            # Remove the expired user
-            del self.users[user_id]
-            return group.to_cluster_group()
-
         # If group still exists (has 2 users)
         else:
             # Update group buckets
             self._update_group_buckets(group)
-            del self.users[user_id]
-            return group.to_cluster_group()
+
+        del self.users[user_id]
+        return group.to_cluster_group()
 
     def cluster_users(self, user_locations: List[UserLocation]) -> List[ClusterGroup]:
         """

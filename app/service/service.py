@@ -181,6 +181,8 @@ class ClusteringService:
 
     def remove_user(self, user_id: int) -> bool:
         """Remove a user from the service"""
+        if hasattr(self.clustering_engine, "remove_user"):
+            self.clustering_engine.remove_user(user_id=user_id)
         return self.data_storage.remove_user_location(user_id)
 
     # Public API methods
