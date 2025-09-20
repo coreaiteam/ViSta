@@ -10,7 +10,7 @@ class UserStatus(Enum):
 
 
 @dataclass
-class UserLocation:
+class InterCityUserLocation:
     user_id: int
     origin_lat: float
     origin_lng: float

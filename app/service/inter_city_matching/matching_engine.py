@@ -5,7 +5,7 @@ from datetime import timedelta
 from sklearn.neighbors import BallTree
 import numpy as np
 
-from .models import UserLocation
+from .models import InterCityUserLocation
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -39,7 +39,7 @@ class InterCityMatcher:
         # Cache for user routes
         self._route_cache: Dict[int, List[Tuple[float, float]]] = {}
 
-    def _fetch_route(self, user: UserLocation) -> List[Tuple[float, float]]:
+    def fetch_route(self, user: InterCityUserLocation) -> List[Tuple[float, float]]:
         """
         Fetch and cache route polyline from OSRM for a given user.
         """
@@ -64,14 +64,14 @@ class InterCityMatcher:
         self._route_cache[user.user_id] = route
         return route
 
-    def _routes_overlap(self, user1: UserLocation, user2: UserLocation,
+    def _routes_overlap(self, user1: InterCityUserLocation, user2: InterCityUserLocation,
                         similarity_threshold: float = 0.8) -> bool:
         """
         Determine if two routes overlap based on actual route similarity.
         - similarity_threshold: fraction of the shorter route that must be close to the other route
         """
-        route1 = self._fetch_route(user1)
-        route2 = self._fetch_route(user2)
+        route1 = self.fetch_route(user1)
+        route2 = self.fetch_route(user2)
 
         if not route1 or not route2:
             return False
@@ -96,7 +96,7 @@ class InterCityMatcher:
 
         return fraction_close >= similarity_threshold
 
-    def _can_match(self, user1: UserLocation, user2: UserLocation, group: List[UserLocation]) -> bool:
+    def _can_match(self, user1: InterCityUserLocation, user2: InterCityUserLocation, group: List[InterCityUserLocation]) -> bool:
         """Check if user2 can be added to group with user1."""
 
         # Origin must be the same city
@@ -123,9 +123,9 @@ class InterCityMatcher:
 
         return True
 
-    def match_users_in_city(self, city_users: List[UserLocation]) -> List[List[UserLocation]]:
+    def match_users_in_city(self, city_users: List[InterCityUserLocation]) -> List[List[InterCityUserLocation]]:
         """Match users within the same city based on origin, time, destination proximity, and route overlap."""
-        matched_groups: List[List[UserLocation]] = []
+        matched_groups: List[List[InterCityUserLocation]] = []
         used = set()
         for i, user1 in enumerate(city_users):
             if i in used:

@@ -1,8 +1,8 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import threading
 import time
 
-from .models import UserLocation
+from .models import InterCityUserLocation
 from .matching_engine import InterCityMatcher, get_inter_city_matching_engine
 
 
@@ -16,8 +16,8 @@ class InterCityRideSharingSystem:
         """
         Initialize the ride sharing system.
         """
-        self.users_by_city: Dict[str, List[UserLocation]] = {}
-        self.match_results: Dict[str, List[List[UserLocation]]] = {}
+        self.users_by_city: Dict[str, List[InterCityUserLocation]] = {}
+        self.match_results: Dict[str, List[List[InterCityUserLocation]]] = {}
         self.clustering_interval = clustering_interval
         self.matching_engine = matching_engine
 
@@ -25,7 +25,7 @@ class InterCityRideSharingSystem:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def add_user(self, user: UserLocation):
+    def add_user(self, user: InterCityUserLocation):
         """
         Add a new user to the system.
         """
@@ -34,11 +34,11 @@ class InterCityRideSharingSystem:
                 self.users_by_city[user.origin_city] = []
             self.users_by_city[user.origin_city].append(user)
 
-    def match_all(self) -> Dict[str, List[List[UserLocation]]]:
+    def match_all(self) -> Dict[str, List[List[InterCityUserLocation]]]:
         """
         Run the matching algorithm for all users grouped by city.
         """
-        results: Dict[str, List[List[UserLocation]]] = {}
+        results: Dict[str, List[List[InterCityUserLocation]]] = {}
         with self._lock:
             for city, users in self.users_by_city.items():
                 results[city] = self.matching_engine.match_users_in_city(users)
@@ -70,11 +70,29 @@ class InterCityRideSharingSystem:
         self._thread.join()
         self._thread = None
 
-    def get_results(self) -> Dict[str, List[List["UserLocation"]]]:
+    def get_results(self) -> Dict[str, List[List[InterCityUserLocation]]]:
         """
         Get the latest matching results from the background service.
         """
         return self.match_results
+
+
+    def get_all_users(self) -> List[InterCityUserLocation]:
+        """
+        Get all users in the system as a flat list.
+        """
+        with self._lock:
+            all_users = []
+            for users in self.users_by_city.values():
+                all_users.extend(users)
+            return all_users
+
+    def fetch_route_for_user(self, user: InterCityUserLocation) -> List[Tuple[float, float]]:
+        """
+        Fetch the route for a given user using the matching engine.
+        """
+        return self.matching_engine.fetch_route(user)
+    
 
 
 _inter_city_clustering_service: InterCityRideSharingSystem | None = None

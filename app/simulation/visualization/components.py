@@ -5,6 +5,11 @@ from typing import List, Dict, Optional, Tuple
 from app.service.models import ClusterGroup, UserLocation
 from app.service.service import get_clustering_service
 
+from app.service.inter_city_matching.models import InterCityUserLocation
+from app.service.inter_city_matching.matching_service import (
+    get_inter_city_clustering_service,
+)
+
 
 class MapHandler:
     def __init__(self, prefix: str):
@@ -14,7 +19,6 @@ class MapHandler:
         self.cluster_colors = ["green", "red", "orange", "yellow"]
 
         self.map = dl.Map(
-
             [
                 dl.TileLayer(),
                 dl.LayersControl(
@@ -30,7 +34,9 @@ class MapHandler:
                             name="Clusters & Meeting Points",
                         ),
                         dl.Overlay(
-                            dl.LayerGroup(id={"type": "temp-markers", "prefix": prefix}),
+                            dl.LayerGroup(
+                                id={"type": "temp-markers", "prefix": prefix}
+                            ),
                             checked=True,
                             name="Other Components",
                         ),
@@ -38,16 +44,15 @@ class MapHandler:
                     id={"type": "layer-control", "prefix": prefix},
                 ),
             ],
-            
             id={"type": "main-map", "prefix": prefix},
             zoom=self.zoom,
             center=self.map_center,
             style={"width": "100%", "height": "100%"},
-
             preferCanvas=True,
         )
 
-
+        self.intra_clustering_service = get_clustering_service()
+        self.inter_clustering_service = get_inter_city_clustering_service()
 
     def create_user_marker(
         self, user: UserLocation, is_origin: bool, cluster_color: Optional[str] = None
@@ -186,7 +191,6 @@ class MapHandler:
         self,
         users: List[UserLocation] = None,
         clusters: List[ClusterGroup] = None,
-
     ) -> Tuple[List, List]:
         user_marker_group = []
         user_line_group = []
@@ -205,6 +209,54 @@ class MapHandler:
                     ]
                 )
                 user_line_group.append(self.create_user_line(user))
-        user_layers = [dl.FeatureGroup(children=user_line_group), dl.FeatureGroup(children=user_marker_group)]
-        
+        user_layers = [
+            dl.FeatureGroup(children=user_line_group),
+            dl.FeatureGroup(children=user_marker_group),
+        ]
+
+        return user_layers
+
+    def create_route_polyline(
+        self,
+        route_coords: List[Tuple[float, float]],
+        route_id: str,
+    ) -> dl.Polyline:
+        """
+        Create a polyline to display a route on the map.
+        """
+        if not route_coords or len(route_coords) < 2:
+            return None
+
+        return dl.Polyline(
+            positions=route_coords,
+            color="blue",
+            weight=3,
+            opacity=0.8,
+            id={"type": "route", "route_id": route_id, "prefix": self.prefix},
+            children=[
+                dl.Tooltip(
+                    f"Route {route_id}",
+                    permanent=False,
+                    direction="auto",
+                    sticky=True,
+                    opacity=0.9,
+                )
+            ],
+        )
+
+    def create_users_layer_inter_city(
+        self,
+        users: List[InterCityUserLocation] = None,
+    ) -> Tuple[List, List]:
+        user_layers = []
+        if users:
+            for idx, user in enumerate(users):
+                user_layers.append(
+                    
+                    self.create_route_polyline(
+                        route_coords=self.inter_clustering_service.fetch_route_for_user(user=user),
+                        route_id=str(idx)
+                    )
+                )
+
         return user_layers

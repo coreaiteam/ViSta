@@ -12,19 +12,30 @@ from .layouts import main_layout, intra_map_handler, inter_map_handler
 from app.service.models import UserLocation
 from ...service.service import get_clustering_service
 
+from app.service.inter_city_matching.matching_service import (
+    get_inter_city_clustering_service,
+)
+from app.service.inter_city_matching.models import InterCityUserLocation
+from app.service.inter_city_matching.utils import get_location_info
 
 # App Initialization
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY, dbc.icons.BOOTSTRAP])
 app.layout = main_layout
 
-# Clustering Service
+# Intra-City Clustering Service
 clustering_service = get_clustering_service()
 clustering_service.start()
 
 
-# User Generator
+# Intra-City User Generator
 generated_data = generate_data(clustering_service.clustering_engine.G)
 data = iter(generated_data)
+
+
+# Inter-City Clustering Service
+inter_city_clustering_service = get_inter_city_clustering_service()
+inter_city_clustering_service.start()
+
 num_all_data = {
     "intra": len(list(generated_data)),
     "inter": 100,
@@ -50,6 +61,7 @@ def invalidate_intra_map(active_tab):
     if active_tab == "intra-city":
         return datetime.now().isoformat()  # Any changing value triggers the invalidate
     raise PreventUpdate
+
 
 @app.callback(
     Output({"type": "main-map", "prefix": "inter"}, "invalidateSize"),
@@ -163,15 +175,49 @@ def add_selected_user(n_clicks):
         )
         cluster_layer = intra_map_handler.create_clusters_layer(clusters=clusters)
 
+        # Reset temp data for this prefix
+        temp_users[prefix]["origin"] = None
+        temp_users[prefix]["destination"] = None
+        temp_markers[prefix].clear()
+
+        return user_layer, cluster_layer, temp_markers
+
     else:
-        pass
+        origin_city = get_location_info(temp_users[prefix]["origin"][0], temp_users[prefix]["origin"][1])
+        dest_city = get_location_info(temp_users[prefix]["destination"][0], temp_users[prefix]["destination"][1])
+        new_user = InterCityUserLocation.from_dict(
+            {
+                "user_id": clustering_service.get_next_user_id(),
+                "origin_lat": temp_users[prefix]["origin"][0],
+                "origin_lng": temp_users[prefix]["origin"][1],
+                "destination_lat": temp_users[prefix]["destination"][0],
+                "destination_lng": temp_users[prefix]["destination"][1],
+                "departure_time": datetime.now(timezone.utc).isoformat(),
+                "passengers": 1,
+                "origin_city": origin_city["city"],
+                "origin_county": origin_city["county"],
+                "origin_state": origin_city["state"],
+                "destination_city": dest_city["city"],
+                "destination_county": dest_city["county"],
+                "destination_state": dest_city["state"],
+            }
+        )
 
-    # Reset temp data for this prefix
-    temp_users[prefix]["origin"] = None
-    temp_users[prefix]["destination"] = None
-    temp_markers[prefix].clear()
+        inter_city_clustering_service.add_user(new_user)
 
-    return user_layer, cluster_layer, temp_markers
+        ## TODO: Routing visualization of inter city users.
+        users = inter_city_clustering_service.get_all_users()
+        user_layer = inter_map_handler.create_users_layer_inter_city(users=users)
+
+
+        # Reset temp data for this prefix
+        temp_users[prefix]["origin"] = None
+        temp_users[prefix]["destination"] = None
+        temp_markers[prefix].clear()
+
+        return user_layer, [], temp_markers
+
+
 
 
 @callback(
