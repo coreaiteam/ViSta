@@ -1,16 +1,14 @@
 import time
 from threading import Lock
-
 import dash
-from dash import Input, Output, State, html, callback, ALL
+from dash import Input, Output, State, html, callback, callback_context, MATCH
 from dash.exceptions import PreventUpdate
 import dash_leaflet as dl
 import dash_bootstrap_components as dbc
 from datetime import datetime, timezone
 
 from .utils import generate_data, loc2userlocation
-from .layouts import main_layout
-from .components import map_handler
+from .layouts import main_layout, intra_map_handler, inter_map_handler
 from app.service.models import UserLocation
 from ...service.service import get_clustering_service
 
@@ -23,60 +21,86 @@ app.layout = main_layout
 clustering_service = get_clustering_service()
 clustering_service.start()
 
+
 # User Generator
 generated_data = generate_data(clustering_service.clustering_engine.G)
 data = iter(generated_data)
-num_all_data = len(list(generated_data))   # همه داده‌ها
+num_all_data = {
+    "intra": len(list(generated_data)),
+    "inter": 100,
+}  # مثال: 100 داده اولیه برای هرکدام
 
-## Temparary User
-temp_user = {"origin": None, "destination": None}
 
-## Temparary Markers
-temp_markers = []
+# نگهداری وضعیت کاربران موقت برای هر prefix
+temp_users = {
+    "intra": {"origin": None, "destination": None},
+    "inter": {"origin": None, "destination": None},
+}
 
-## users and clusters
+# نگهداری مارکرهای موقت برای هر prefix
+temp_markers = {"intra": [], "inter": []}
+
+
+## For loading Map Tile well
+@app.callback(
+    Output({"type": "main-map", "prefix": "intra"}, "invalidateSize"),
+    Input("clustering-tabs", "active_tab"),
+)
+def invalidate_intra_map(active_tab):
+    if active_tab == "intra-city":
+        return datetime.now().isoformat()  # Any changing value triggers the invalidate
+    raise PreventUpdate
+
+@app.callback(
+    Output({"type": "main-map", "prefix": "inter"}, "invalidateSize"),
+    Input("clustering-tabs", "active_tab"),
+)
+def invalidate_inter_map(active_tab):
+    if active_tab == "inter-city":
+        return datetime.now().isoformat()  # Any changing value triggers the invalidate
+    raise PreventUpdate
+
 
 @callback(
-    Output("temp-markers", "children", allow_duplicate=True),
+    Output({"type": "temp-markers", "prefix": MATCH}, "children", allow_duplicate=True),
     [
-        Input("main-map", "clickData"),
-        State("click-mode", "value"),
+        Input({"type": "main-map", "prefix": MATCH}, "clickData"),
+        State({"type": "click-mode", "prefix": MATCH}, "value"),
     ],
     prevent_initial_call=True,
 )
 def capture_map_click(click_data, click_mode):
     """
-    Callback to capture map clicks and update temporary coordinates with markers.
+    Capture map clicks and update temporary coordinates with markers.
+    Works for both intra-city and inter-city maps (pattern-matching).
     """
     if not click_data:
         raise PreventUpdate
 
-    # Extract latitude and longitude from click event
+    # مشخص کردن prefix (intra یا inter)
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
+
+    # Extract latitude and longitude
     lat, lng = click_data["latlng"]["lat"], click_data["latlng"]["lng"]
     coords = [lat, lng]
 
-    # Update temp_coords based on click_mode
-    global temp_user
-    temp_user[click_mode] = None
-    temp_user[click_mode] = coords
+    # Update temp_user for this prefix
+    temp_users[prefix][click_mode] = None
+    temp_users[prefix][click_mode] = coords
 
-
-    # Create temporary markers
-
-    global temp_markers
-
+    # Update markers
     if click_mode == "origin":
-        temp_markers = []
-    
-    if click_mode == "destination":
-        temp_markers.pop()
+        temp_markers[prefix] = []
+
+    if click_mode == "destination" and temp_markers[prefix]:
+        temp_markers[prefix].pop()
 
     for point_type, position in [
-        ("Origin", temp_user.get("origin")),
-        ("Destination", temp_user.get("destination")),
+        ("Origin", temp_users[prefix].get("origin")),
+        ("Destination", temp_users[prefix].get("destination")),
     ]:
         if position:
-            temp_markers.append(
+            temp_markers[prefix].append(
                 dl.Marker(
                     position=position,
                     children=[
@@ -91,273 +115,332 @@ def capture_map_click(click_data, click_mode):
                 )
             )
 
-    return temp_markers
+    return temp_markers[prefix]
 
 
 @callback(
-    Output("users", "children", allow_duplicate=True),
-    Output("clusters", "children", allow_duplicate=True),
-    Output("bulk-user-info", "children", allow_duplicate=True),
-
-    Input("add-random-user-btn", "n_clicks"),
-    prevent_initial_call=True,
-)
-def add_random_user(n_clicks):
-    """
-    Callback to add a new random user to the map.
-    """
-    if not n_clicks:
-        raise PreventUpdate
-
-    user_id = clustering_service.get_next_user_id()
-    
-    new_user = loc2userlocation(user_id=user_id, loc=next(data))
-    clustering_service.add_user_location(new_user)
-
-    users = clustering_service.get_all_users()
-    clusters = clustering_service.get_all_active_groups()
-
-
-    userlayer = map_handler.create_users_layer(users=users, clusters=clusters)
-    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
-
-    global num_all_data
-    num_all_data -= 1
-    info_text = f"Remaining number of users: {num_all_data}"
-
-    return userlayer, cluster_layer, info_text
-
-
-@callback(
-    Output("users", "children", allow_duplicate=True),
-    Output("clusters", "children", allow_duplicate=True),
-    Output("temp-markers", "children", allow_duplicate=True),
-
-
-    Input("add-selected-user-btn", "n_clicks"),
+    Output({"type": "users", "prefix": MATCH}, "children", allow_duplicate=True),
+    Output({"type": "clusters", "prefix": MATCH}, "children", allow_duplicate=True),
+    Output({"type": "temp-markers", "prefix": MATCH}, "children", allow_duplicate=True),
+    Input({"type": "add-selected-user-btn", "prefix": MATCH}, "n_clicks"),
     prevent_initial_call=True,
 )
 def add_selected_user(n_clicks):
     """
-    Callback to add a user with selected coordinates.
-
-    Args:
-        n_clicks: Number of clicks on selected user button
-        temp_coords: Temporary coordinates for selected user
-
-    Returns:
-        Updated map with new selected user
+    Add a user with the currently selected temporary coordinates (origin + destination).
+    Works for both intra-city and inter-city layouts using prefix.
     """
     if not n_clicks:
         raise PreventUpdate
 
-    global temp_user
-    if not (temp_user.get("origin") and temp_user.get("destination")):
+    # Extract prefix from triggering input
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
+
+    # Check that both points exist
+    if not (temp_users[prefix].get("origin") and temp_users[prefix].get("destination")):
         raise PreventUpdate
 
-    new_user = UserLocation.from_dict(
-        {
-            "user_id": clustering_service.get_next_user_id(),
-            "origin_lat": temp_user["origin"][0],
-            "origin_lng": temp_user["origin"][1],
-            "destination_lat": temp_user["destination"][0],
-            "destination_lng": temp_user["destination"][1],
-            "stored_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
-    temp_user = {"origin": None, "destination": None}
-    global temp_markers
-    temp_markers = []
-    clustering_service.add_user_location(new_user)
+    # Generate layers (map_handler خودش باید prefix-aware ساخته شده باشه)
+    if prefix == "intra":
+        # Create new user from selected coordinates
+        new_user = UserLocation.from_dict(
+            {
+                "user_id": clustering_service.get_next_user_id(),
+                "origin_lat": temp_users[prefix]["origin"][0],
+                "origin_lng": temp_users[prefix]["origin"][1],
+                "destination_lat": temp_users[prefix]["destination"][0],
+                "destination_lng": temp_users[prefix]["destination"][1],
+                "stored_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
-    users = clustering_service.get_all_users()
-    clusters = clustering_service.get_all_active_groups()
+        # Update clustering service
+        clustering_service.add_user_location(new_user)
+        users = clustering_service.get_all_users()
+        clusters = clustering_service.get_all_active_groups()
+        user_layer = intra_map_handler.create_users_layer(
+            users=users, clusters=clusters
+        )
+        cluster_layer = intra_map_handler.create_clusters_layer(clusters=clusters)
 
-    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
-    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
+    else:
+        pass
+
+    # Reset temp data for this prefix
+    temp_users[prefix]["origin"] = None
+    temp_users[prefix]["destination"] = None
+    temp_markers[prefix].clear()
+
     return user_layer, cluster_layer, temp_markers
 
 
-
 @callback(
-    Output("temp-markers", "children", allow_duplicate=True),
-    Input("clear-markers-btn", "n_clicks"),
+    Output({"type": "temp-markers", "prefix": MATCH}, "children", allow_duplicate=True),
+    Input({"type": "clear-markers-btn", "prefix": MATCH}, "n_clicks"),
     prevent_initial_call=True,
 )
 def clear_temp_markers(n_clicks):
     """
-    Clears all temporary markers from the map.
+    Clears all temporary markers and resets temp coordinates for the given prefix.
     """
-    global temp_user, temp_markers
-    temp_user = {"origin": None, "destination": None}
-    temp_markers = []
+    if not n_clicks:
+        raise PreventUpdate
+
+    # تشخیص prefix از triggering input
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
+
+    # ریست کردن داده‌های موقت برای این prefix
+    temp_users[prefix]["origin"] = None
+    temp_users[prefix]["destination"] = None
+    temp_markers[prefix].clear()
+
     return []
 
 
+# شمارنده دیتای باقی‌مانده برای هر prefix
 
-
-# # Global cache for users/clusters
-last_users = None
-last_clusters = None
-
-# Add a lock to prevent concurrent execution
-callback_lock = Lock()
-last_execution_time = 0
-EXECUTION_COOLDOWN = 0.5  # 500ms cooldown
 
 @callback(
-    Output("users", "children", allow_duplicate=True),
-    Output("clusters", "children", allow_duplicate=True),
-    Input("users-refresh-interval", "n_intervals"),
+    Output({"type": "users", "prefix": MATCH}, "children", allow_duplicate=True),
+    Output({"type": "clusters", "prefix": MATCH}, "children", allow_duplicate=True),
+    Output(
+        {"type": "bulk-user-info", "prefix": MATCH}, "children", allow_duplicate=True
+    ),
+    Input({"type": "add-random-user-btn", "prefix": MATCH}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def add_random_user(n_clicks):
+    """
+    Add a new random user to the map (currently only intra-city implemented).
+    """
+    if not n_clicks:
+        raise PreventUpdate
+
+    # گرفتن prefix از input
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
+
+    if prefix == "intra":
+        # ساخت یوزر جدید
+        user_id = clustering_service.get_next_user_id()
+        new_user = loc2userlocation(user_id=user_id, loc=next(data))
+        clustering_service.add_user_location(new_user)
+
+        # گرفتن لیست کاربران و کلاسترها
+        users = clustering_service.get_all_users()
+        clusters = clustering_service.get_all_active_groups()
+
+        # ساخت لایه‌های نقشه با intra_map_handler
+        userlayer = intra_map_handler.create_users_layer(users=users, clusters=clusters)
+        cluster_layer = intra_map_handler.create_clusters_layer(clusters=clusters)
+
+        # آپدیت شمارنده
+        global num_all_data
+        num_all_data["intra"] -= 1
+        info_text = f"Remaining number of users: {num_all_data['intra']}"
+
+        return userlayer, cluster_layer, info_text
+
+    elif prefix == "inter":
+        # TODO: بعداً منطق inter-city اضافه میشه
+        raise PreventUpdate
+
+
+# Global cache per prefix
+last_users = {"intra": None, "inter": None}
+last_clusters = {"intra": None, "inter": None}
+
+# Lock per prefix
+callback_locks = {"intra": Lock(), "inter": Lock()}
+
+# Last execution time per prefix
+last_execution_time = {"intra": 0, "inter": 0}
+EXECUTION_COOLDOWN = 0.5  # 500ms cooldown
+
+
+@callback(
+    Output({"type": "users", "prefix": MATCH}, "children", allow_duplicate=True),
+    Output({"type": "clusters", "prefix": MATCH}, "children", allow_duplicate=True),
+    Input({"type": "users-refresh-interval", "prefix": MATCH}, "n_intervals"),
     prevent_initial_call=True,
 )
 def refresh_map(n_intervals):
     """
     Periodically refresh the map with updated users and clusters.
+    Currently implemented only for intra prefix.
     """
-    global last_users, last_clusters, last_execution_time
-    
-    # Prevent concurrent execution
-    current_time = time.time()
-    if current_time - last_execution_time < EXECUTION_COOLDOWN:
-        print(f"Skipping execution - too soon after last run: {current_time - last_execution_time:.3f}s")
-        raise PreventUpdate
-    
-    with callback_lock:
-        if current_time - last_execution_time < EXECUTION_COOLDOWN:
-            raise PreventUpdate
-        
-        last_execution_time = current_time
-        
-        users = clustering_service.get_all_users()
-        clusters = clustering_service.get_all_active_groups()
-        
-        # Check if new data differs from last cached
-        if users == last_users and clusters == last_clusters:
-            raise PreventUpdate
-        
-        # Update cache
-        last_users = users
-        last_clusters = clusters
-        
-        user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
-        cluster_layer = map_handler.create_clusters_layer(clusters=clusters)
-        
-        return user_layer, cluster_layer
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
 
+    if prefix == "intra":
+        global last_users, last_clusters, last_execution_time, callback_locks
+
+        current_time = time.time()
+        if current_time - last_execution_time[prefix] < EXECUTION_COOLDOWN:
+            print(
+                f"[{prefix}] Skipping execution - too soon after last run: {current_time - last_execution_time[prefix]:.3f}s"
+            )
+            raise PreventUpdate
+
+        with callback_locks[prefix]:
+            if current_time - last_execution_time[prefix] < EXECUTION_COOLDOWN:
+                raise PreventUpdate
+
+            last_execution_time[prefix] = current_time
+
+            users = clustering_service.get_all_users()
+            clusters = clustering_service.get_all_active_groups()
+
+            # Skip if nothing changed
+            if users == last_users[prefix] and clusters == last_clusters[prefix]:
+                raise PreventUpdate
+
+            # Update cache
+            last_users[prefix] = users
+            last_clusters[prefix] = clusters
+
+            user_layer = intra_map_handler.create_users_layer(
+                users=users, clusters=clusters
+            )
+            cluster_layer = intra_map_handler.create_clusters_layer(clusters=clusters)
+
+            return user_layer, cluster_layer
+    else:
+        # prefix = "inter" or others -> do nothing
+        raise PreventUpdate
 
 
 @callback(
-    Output("stats-container", "children"),
-    Input("stats-refresh-interval", "n_intervals"),  # reuse the interval you already have
+    Output({"type": "stats-container", "prefix": MATCH}, "children"),
+    Input({"type": "stats-refresh-interval", "prefix": MATCH}, "n_intervals"),
     prevent_initial_call=True,
 )
 def update_stats(n_intervals):
     """
     Updates the statistics card with the latest user and cluster counts.
+    Currently implemented only for intra prefix.
     """
-    users = clustering_service.get_all_users()
-    clusters = clustering_service.get_all_active_groups()
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
 
-    total_users = len(users)
-    total_clusters = len(clusters)
+    if prefix == "intra":
+        users = clustering_service.get_all_users()
+        clusters = clustering_service.get_all_active_groups()
 
-    return dbc.Row(
-        [
-            dbc.Col(
-                html.Div(
-                    [
-                        html.H5("Total Users", className="text-muted"),
-                        html.H3(total_users, className="text-success fw-bold"),
-                    ],
-                    className="text-center",
+        total_users = len(users)
+        total_clusters = len(clusters)
+
+        return dbc.Row(
+            [
+                dbc.Col(
+                    html.Div(
+                        [
+                            html.H5("Total Users", className="text-muted"),
+                            html.H3(total_users, className="text-success fw-bold"),
+                        ],
+                        className="text-center",
+                    ),
+                    width=6,
                 ),
-                width=6,
-            ),
-            dbc.Col(
-                html.Div(
-                    [
-                        html.H5("Total Clusters", className="text-muted"),
-                        html.H3(total_clusters, className="text-primary fw-bold"),
-                    ],
-                    className="text-center",
+                dbc.Col(
+                    html.Div(
+                        [
+                            html.H5("Total Clusters", className="text-muted"),
+                            html.H3(total_clusters, className="text-primary fw-bold"),
+                        ],
+                        className="text-center",
+                    ),
+                    width=6,
                 ),
-                width=6,
-            ),
-        ],
-        className="g-3",
-    )
-
-
+            ],
+            className="g-3",
+        )
+    else:
+        # prefix = inter or others → فعلاً کاری انجام نمی‌ده
+        raise PreventUpdate
 
 
 @callback(
     [
-    Output("users", "children", allow_duplicate=True),
-    Output("clusters", "children", allow_duplicate=True),
+        Output({"type": "users", "prefix": MATCH}, "children", allow_duplicate=True),
+        Output({"type": "clusters", "prefix": MATCH}, "children", allow_duplicate=True),
     ],
-    Input("remove-user-btn", "n_clicks"),
-    State("remove-user-id", "value"),
+    Input({"type": "remove-user-btn", "prefix": MATCH}, "n_clicks"),
+    State({"type": "remove-user-id", "prefix": MATCH}, "value"),
     prevent_initial_call=True,
 )
 def remove_user(n_clicks, user_id):
     """
-    Removes a user by user_id and refreshes map
+    Removes a user by user_id and refreshes the map for the given prefix.
+    Currently implemented only for intra.
     """
-    if not user_id:
+    if not n_clicks or not user_id:
         raise PreventUpdate
 
-    clustering_service.remove_user(user_id)
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
 
-    # refresh data
-    users = clustering_service.get_all_users()
-    clusters = clustering_service.get_all_active_groups()
-    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
-    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
-    return user_layer, cluster_layer
+    if prefix == "intra":
+        clustering_service.remove_user(user_id)
 
+        # refresh data
+        users = clustering_service.get_all_users()
+        clusters = clustering_service.get_all_active_groups()
+
+        user_layer = intra_map_handler.create_users_layer(
+            users=users, clusters=clusters
+        )
+        cluster_layer = intra_map_handler.create_clusters_layer(clusters=clusters)
+
+        return user_layer, cluster_layer
+    else:
+        # prefix = inter یا بقیه → فعلاً کاری انجام نمی‌ده
+        raise PreventUpdate
 
 
 @callback(
     [
-    Output("users", "children", allow_duplicate=True),
-    Output("clusters", "children", allow_duplicate=True),
-    Output("bulk-user-info", "children"),
+        Output({"type": "users", "prefix": MATCH}, "children", allow_duplicate=True),
+        Output({"type": "clusters", "prefix": MATCH}, "children", allow_duplicate=True),
+        Output({"type": "bulk-user-info", "prefix": MATCH}, "children"),
     ],
-    Input("add-multiple-users-btn", "n_clicks"),
-    State("bulk-user-count", "value"),
+    Input({"type": "add-multiple-users-btn", "prefix": MATCH}, "n_clicks"),
+    State({"type": "bulk-user-count", "prefix": MATCH}, "value"),
     prevent_initial_call=True,
 )
 def add_multiple_users(n_clicks, count):
     """
-    Add multiple random users at once.
+    Add multiple random users at once for the given prefix.
+    Currently implemented only for intra.
     """
     if not n_clicks or not count or count <= 0:
         raise PreventUpdate
-    global num_all_data
-    users_added = 0
 
-    for _ in range(count):
+    prefix = callback_context.inputs_list[0]["id"]["prefix"]
 
-        user_id = clustering_service.get_next_user_id()
-        new_user = loc2userlocation(user_id=user_id, loc=next(data))
-        clustering_service.add_user_location(new_user)
-        users_added += 1
+    if prefix == "intra":
+        users_added = 0
 
-    # refresh data
-    users = clustering_service.get_all_users()
-    clusters = clustering_service.get_all_active_groups()
+        for _ in range(count):
+            user_id = clustering_service.get_next_user_id()
+            new_user = loc2userlocation(user_id=user_id, loc=next(data))
+            clustering_service.add_user_location(new_user)
+            users_added += 1
 
-    user_layer = map_handler.create_users_layer(users=users, clusters=clusters)
-    cluster_layer =  map_handler.create_clusters_layer(clusters=clusters)
+        # refresh data
+        users = clustering_service.get_all_users()
+        clusters = clustering_service.get_all_active_groups()
 
-    num_all_data -= users_added
-    info_text = f"Remaining number of users: {num_all_data}"
+        user_layer = intra_map_handler.create_users_layer(
+            users=users, clusters=clusters
+        )
+        cluster_layer = intra_map_handler.create_clusters_layer(clusters=clusters)
 
-    return user_layer, cluster_layer, info_text
+        # کم کردن از شمارنده داده‌های باقی‌مانده
+        num_all_data[prefix] -= users_added
+        info_text = f"Remaining number of users: {num_all_data[prefix]}"
 
+        return user_layer, cluster_layer, info_text
+    else:
+        # prefix = inter یا بقیه → فعلاً کاری انجام نمی‌ده
+        raise PreventUpdate
 
 
 if __name__ == "__main__":
     app.run(port=8080)
-

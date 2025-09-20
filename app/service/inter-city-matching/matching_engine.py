@@ -142,3 +142,15 @@ class InterCityMatcher:
                     break
             matched_groups.append(group)
         return matched_groups
+
+
+
+_inter_city_matching_engine: InterCityMatcher | None = None
+
+def get_inter_city_matching_engine() -> InterCityMatcher:
+    global _inter_city_matching_engine
+
+    if _inter_city_matching_engine is None:
+        _inter_city_matching_engine = InterCityMatcher()
+
+    return _inter_city_matching_engine

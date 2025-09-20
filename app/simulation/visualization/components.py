@@ -7,46 +7,47 @@ from app.service.service import get_clustering_service
 
 
 class MapHandler:
-    def __init__(self, map_id: str = "main-map"):
-        self.map_id = map_id
+    def __init__(self, prefix: str):
+        self.prefix = prefix
         self.map_center = (35.6892, 51.3890)
         self.zoom = 12
         self.cluster_colors = ["green", "red", "orange", "yellow"]
 
-        self.map = (
-            dl.Map(
-                [
-                    dl.TileLayer(),
-                    dl.LayersControl(
-                        [
-                            dl.Overlay(
-                                dl.LayerGroup(id="users"),
-                                checked=True,
-                                name="User Markers and lines",
-                            ),
-                            dl.Overlay(
-                                dl.LayerGroup(id="clusters"),
-                                checked=False,
-                                name="Clusters & Meeting Points",
-                            ),
-                            dl.Overlay(
-                                dl.LayerGroup(id="temp-markers"),
-                                checked=True,
-                                name="Other Components",
-                            ),
-                        ],
-                        id="layer-control",
-                    ),
-                ],
-                id=map_id,
-                zoom=12,
-                center=self.map_center,
-                style={"width": "100%", "height": "100%"},
-                preferCanvas=True
-            ),
+        self.map = dl.Map(
+
+            [
+                dl.TileLayer(),
+                dl.LayersControl(
+                    [
+                        dl.Overlay(
+                            dl.LayerGroup(id={"type": "users", "prefix": prefix}),
+                            checked=True,
+                            name="User Markers and lines",
+                        ),
+                        dl.Overlay(
+                            dl.LayerGroup(id={"type": "clusters", "prefix": prefix}),
+                            checked=False,
+                            name="Clusters & Meeting Points",
+                        ),
+                        dl.Overlay(
+                            dl.LayerGroup(id={"type": "temp-markers", "prefix": prefix}),
+                            checked=True,
+                            name="Other Components",
+                        ),
+                    ],
+                    id={"type": "layer-control", "prefix": prefix},
+                ),
+            ],
+            
+            id={"type": "main-map", "prefix": prefix},
+            zoom=self.zoom,
+            center=self.map_center,
+            style={"width": "100%", "height": "100%"},
+
+            preferCanvas=True,
         )
 
-        self.clustering_service = get_clustering_service()
+
 
     def create_user_marker(
         self, user: UserLocation, is_origin: bool, cluster_color: Optional[str] = None
@@ -207,6 +208,3 @@ class MapHandler:
         user_layers = [dl.FeatureGroup(children=user_line_group), dl.FeatureGroup(children=user_marker_group)]
         
         return user_layers
-
-
-map_handler = MapHandler()
