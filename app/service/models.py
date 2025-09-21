@@ -26,6 +26,18 @@ class UserLocation:
     stored_at: datetime
     status: UserStatus = UserStatus.PENDING
 
+
+    ## Inter-City Properties
+    passengers: int = 1
+    # Add origin location details
+    origin_city: Optional[str] = None
+    origin_county: Optional[str] = None
+    origin_state: Optional[str] = None
+    # Add destination location details
+    destination_city: Optional[str] = None
+    destination_county: Optional[str] = None
+    destination_state: Optional[str] = None
+
     @property
     def origin_coords(self) -> Tuple[float, float]:
         return (self.origin_lat, self.origin_lng)
@@ -41,7 +53,16 @@ class UserLocation:
             'origin_lng': self.origin_lng,
             'destination_lat': self.destination_lat,
             'destination_lng': self.destination_lng,
-            'stored_at': self.stored_at.isoformat()
+            'stored_at': self.stored_at.isoformat(),
+
+            'passengers': self.passengers,
+            'origin_city': self.origin_city,
+            'origin_county': self.origin_county,
+            'origin_state': self.origin_state,
+            'destination_city': self.destination_city,
+            'destination_county': self.destination_county,
+            'destination_state': self.destination_state,
+            'status': self.status.value
         }
 
     @classmethod
@@ -53,6 +74,15 @@ class UserLocation:
             destination_lat=data["destination_lat"],
             destination_lng=data["destination_lng"],
             stored_at=datetime.fromisoformat(data["stored_at"]),
+
+            passengers=int(data.get("passengers", 1)),
+            origin_city=data.get("origin_city"),
+            origin_county=data.get("origin_county"),
+            origin_state=data.get("origin_state"),
+            destination_city=data.get("destination_city"),
+            destination_county=data.get("destination_county"),
+            destination_state=data.get("destination_state"),
+            status=UserStatus(data.get("status", "pending"))
         )
 
 @dataclass

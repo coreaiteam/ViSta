@@ -5,8 +5,9 @@ from datetime import timedelta
 from sklearn.neighbors import BallTree
 import numpy as np
 
-from .models import InterCityUserLocation
+# from .models import InterCityUserLocation
 
+from ..models import UserLocation
 
 def haversine(lat1, lon1, lat2, lon2):
     """Great-circle distance (in km) between two points."""
@@ -39,7 +40,7 @@ class InterCityMatcher:
         # Cache for user routes
         self._route_cache: Dict[int, List[Tuple[float, float]]] = {}
 
-    def fetch_route(self, user: InterCityUserLocation) -> List[Tuple[float, float]]:
+    def fetch_route(self, user: UserLocation) -> List[Tuple[float, float]]:
         """
         Fetch and cache route polyline from OSRM for a given user.
         """
@@ -64,7 +65,7 @@ class InterCityMatcher:
         self._route_cache[user.user_id] = route
         return route
 
-    def _routes_overlap(self, user1: InterCityUserLocation, user2: InterCityUserLocation,
+    def _routes_overlap(self, user1: UserLocation, user2: UserLocation,
                         similarity_threshold: float = 0.8) -> bool:
         """
         Determine if two routes overlap based on actual route similarity.
@@ -96,7 +97,7 @@ class InterCityMatcher:
 
         return fraction_close >= similarity_threshold
 
-    def _can_match(self, user1: InterCityUserLocation, user2: InterCityUserLocation, group: List[InterCityUserLocation]) -> bool:
+    def _can_match(self, user1: UserLocation, user2: UserLocation, group: List[UserLocation]) -> bool:
         """Check if user2 can be added to group with user1."""
 
         # Origin must be the same city
@@ -104,7 +105,7 @@ class InterCityMatcher:
             return False
 
         # Departure time must be within allowed window
-        time_diff = abs((user1.departure_time - user2.departure_time).total_seconds() / 60)
+        time_diff = abs((user1.stored_at - user2.stored_at).total_seconds() / 60)
         if time_diff > self.time_window.total_seconds() / 60:
             return False
 
@@ -123,9 +124,9 @@ class InterCityMatcher:
 
         return True
 
-    def match_users_in_city(self, city_users: List[InterCityUserLocation]) -> List[List[InterCityUserLocation]]:
+    def match_users_in_city(self, city_users: List[UserLocation]) -> List[List[UserLocation]]:
         """Match users within the same city based on origin, time, destination proximity, and route overlap."""
-        matched_groups: List[List[InterCityUserLocation]] = []
+        matched_groups: List[List[UserLocation]] = []
         used = set()
         for i, user1 in enumerate(city_users):
             if i in used:

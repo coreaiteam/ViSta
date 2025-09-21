@@ -15,8 +15,8 @@ from ...service.service import get_clustering_service
 from app.service.inter_city_matching.matching_service import (
     get_inter_city_clustering_service,
 )
-from app.service.inter_city_matching.models import InterCityUserLocation
 from app.service.inter_city_matching.utils import get_location_info
+
 
 # App Initialization
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY, dbc.icons.BOOTSTRAP])
@@ -91,7 +91,7 @@ def capture_map_click(click_data, click_mode):
 
     # مشخص کردن prefix (intra یا inter)
     prefix = callback_context.inputs_list[0]["id"]["prefix"]
-
+    global temp_markers, temp_users
     # Extract latitude and longitude
     lat, lng = click_data["latlng"]["lat"], click_data["latlng"]["lng"]
     coords = [lat, lng]
@@ -148,6 +148,7 @@ def add_selected_user(n_clicks):
     # Extract prefix from triggering input
     prefix = callback_context.inputs_list[0]["id"]["prefix"]
 
+    global temp_users, temp_markers
     # Check that both points exist
     if not (temp_users[prefix].get("origin") and temp_users[prefix].get("destination")):
         raise PreventUpdate
@@ -180,19 +181,19 @@ def add_selected_user(n_clicks):
         temp_users[prefix]["destination"] = None
         temp_markers[prefix].clear()
 
-        return user_layer, cluster_layer, temp_markers
+        return user_layer, cluster_layer, temp_markers[prefix]
 
     else:
         origin_city = get_location_info(temp_users[prefix]["origin"][0], temp_users[prefix]["origin"][1])
         dest_city = get_location_info(temp_users[prefix]["destination"][0], temp_users[prefix]["destination"][1])
-        new_user = InterCityUserLocation.from_dict(
+        new_user = UserLocation.from_dict(
             {
                 "user_id": clustering_service.get_next_user_id(),
                 "origin_lat": temp_users[prefix]["origin"][0],
                 "origin_lng": temp_users[prefix]["origin"][1],
                 "destination_lat": temp_users[prefix]["destination"][0],
                 "destination_lng": temp_users[prefix]["destination"][1],
-                "departure_time": datetime.now(timezone.utc).isoformat(),
+                "stored_at": datetime.now(timezone.utc).isoformat(),
                 "passengers": 1,
                 "origin_city": origin_city["city"],
                 "origin_county": origin_city["county"],
@@ -215,7 +216,7 @@ def add_selected_user(n_clicks):
         temp_users[prefix]["destination"] = None
         temp_markers[prefix].clear()
 
-        return user_layer, [], temp_markers
+        return user_layer, [], temp_markers[prefix]
 
 
 
@@ -315,9 +316,9 @@ def refresh_map(n_intervals):
     Currently implemented only for intra prefix.
     """
     prefix = callback_context.inputs_list[0]["id"]["prefix"]
-
+    global last_users, last_clusters, last_execution_time, callback_locks
+    
     if prefix == "intra":
-        global last_users, last_clusters, last_execution_time, callback_locks
 
         current_time = time.time()
         if current_time - last_execution_time[prefix] < EXECUTION_COOLDOWN:
@@ -349,9 +350,32 @@ def refresh_map(n_intervals):
             cluster_layer = intra_map_handler.create_clusters_layer(clusters=clusters)
 
             return user_layer, cluster_layer
+  
+  
     else:
-        # prefix = "inter" or others -> do nothing
-        raise PreventUpdate
+          
+        current_time = time.time()
+        if current_time - last_execution_time[prefix] < EXECUTION_COOLDOWN:
+            print(
+                f"[{prefix}] Skipping execution - too soon after last run: {current_time - last_execution_time[prefix]:.3f}s"
+            )
+            raise PreventUpdate
+
+        with callback_locks[prefix]:
+            if current_time - last_execution_time[prefix] < EXECUTION_COOLDOWN:
+                raise PreventUpdate
+
+            last_execution_time[prefix] = current_time
+
+            users = inter_city_clustering_service.get_all_users()
+            clusters = inter_city_clustering_service.get_all_active_groups()
+
+            user_layer = inter_map_handler.create_users_layer_inter_city(
+                users=users, clustered_users=clusters
+            )
+
+
+            return user_layer, []
 
 
 @callback(
@@ -398,9 +422,47 @@ def update_stats(n_intervals):
             ],
             className="g-3",
         )
+    
+
+
     else:
-        # prefix = inter or others → فعلاً کاری انجام نمی‌ده
-        raise PreventUpdate
+            users = inter_city_clustering_service.get_all_users()
+            clusters = inter_city_clustering_service.get_all_active_groups()
+
+
+            total_users = len(users)
+            total_clusters = 0
+
+            for _, clusters in clusters.items():
+                for cluster in clusters:
+                    if len(cluster) > 1: 
+                        total_clusters += 1
+
+            return dbc.Row(
+                [
+                    dbc.Col(
+                        html.Div(
+                            [
+                                html.H5("Total Users", className="text-muted"),
+                                html.H3(total_users, className="text-success fw-bold"),
+                            ],
+                            className="text-center",
+                        ),
+                        width=6,
+                    ),
+                    dbc.Col(
+                        html.Div(
+                            [
+                                html.H5("Total Clusters", className="text-muted"),
+                                html.H3(total_clusters, className="text-primary fw-bold"),
+                            ],
+                            className="text-center",
+                        ),
+                        width=6,
+                    ),
+                ],
+                className="g-3",
+            )
 
 
 @callback(
@@ -437,7 +499,18 @@ def remove_user(n_clicks, user_id):
         return user_layer, cluster_layer
     else:
         # prefix = inter یا بقیه → فعلاً کاری انجام نمی‌ده
-        raise PreventUpdate
+        inter_city_clustering_service.remove_user(user_id)
+
+        # refresh data
+        users = inter_city_clustering_service.get_all_users()
+        clusters = inter_city_clustering_service.get_all_active_groups()
+
+        user_layer = inter_map_handler.create_users_layer_inter_city(
+            users=users, clustered_users=clusters
+        )
+
+        return user_layer, []
+
 
 
 @callback(

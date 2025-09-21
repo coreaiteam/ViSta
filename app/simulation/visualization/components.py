@@ -5,7 +5,7 @@ from typing import List, Dict, Optional, Tuple
 from app.service.models import ClusterGroup, UserLocation
 from app.service.service import get_clustering_service
 
-from app.service.inter_city_matching.models import InterCityUserLocation
+# from app.service.inter_city_matching.models import InterCityUserLocation
 from app.service.inter_city_matching.matching_service import (
     get_inter_city_clustering_service,
 )
@@ -169,7 +169,7 @@ class MapHandler:
     def create_clusters_layer(
         self,
         clusters: List[ClusterGroup] = None,
-    ) -> Tuple[List, List]:
+    ) -> List:
         cluster_layers = []
 
         if clusters:
@@ -191,7 +191,7 @@ class MapHandler:
         self,
         users: List[UserLocation] = None,
         clusters: List[ClusterGroup] = None,
-    ) -> Tuple[List, List]:
+    ) -> List:
         user_marker_group = []
         user_line_group = []
         user_to_cluster = self.generate_user_to_cluster(clusters)
@@ -220,6 +220,8 @@ class MapHandler:
         self,
         route_coords: List[Tuple[float, float]],
         route_id: str,
+        color: str = "blue"
+
     ) -> dl.Polyline:
         """
         Create a polyline to display a route on the map.
@@ -229,7 +231,7 @@ class MapHandler:
 
         return dl.Polyline(
             positions=route_coords,
-            color="blue",
+            color=color,
             weight=3,
             opacity=0.8,
             id={"type": "route", "route_id": route_id, "prefix": self.prefix},
@@ -244,19 +246,82 @@ class MapHandler:
             ],
         )
 
+    # def create_users_layer_inter_city(
+    #     self,
+    #     users: List[UserLocation] = None,
+    # ) -> List:
+    #     user_layers = []
+    #     if users:
+    #         for idx, user in enumerate(users):
+    #             user_layers.extend(
+    #                 [
+    #                     self.create_route_polyline(
+    #                         route_coords=self.inter_clustering_service.fetch_route_for_user(
+    #                             user=user
+    #                         ),
+    #                         route_id=str(idx),
+    #                     ),
+    #                     self.create_user_marker(user, is_origin=True),
+    #                     self.create_user_marker(user, is_origin=False),
+    #                 ]
+    #             )
+
+    #     return user_layers
+
     def create_users_layer_inter_city(
         self,
-        users: List[InterCityUserLocation] = None,
-    ) -> Tuple[List, List]:
+        users: List[UserLocation],
+        clustered_users: Dict[str, List[List[UserLocation]]] = None,
+    ) -> List:
+        """
+        Render inter-city user layers.
+        """
         user_layers = []
-        if users:
-            for idx, user in enumerate(users):
-                user_layers.append(
+        clustered_user_ids = set()
+
+        # --- Clustered users ---
+        if clustered_users:
+            cluster_idx = 0
+            for city, clusters in clustered_users.items():
+                for cluster in clusters:
+                    color = self.cluster_colors[cluster_idx % len(self.cluster_colors)]
+                    cluster_idx += 1
                     
-                    self.create_route_polyline(
-                        route_coords=self.inter_clustering_service.fetch_route_for_user(user=user),
-                        route_id=str(idx)
-                    )
+                    if len(cluster) > 1: 
+                        for user in cluster:
+                            clustered_user_ids.add(user.user_id)
+                            route = self.inter_clustering_service.fetch_route_for_user(user=user)
+                            user_layers.extend(
+                                [
+                                    self.create_route_polyline(
+                                        route_coords=route,
+                                        route_id=f"{city}_{user.user_id}",
+                                        color=color,
+                                    ),
+                                    self.create_user_marker(
+                                        user, is_origin=True, cluster_color=color
+                                    ),
+                                    self.create_user_marker(
+                                        user, is_origin=False, cluster_color=color
+                                    ),
+                                ]
+                            )
+
+        # --- Ungrouped users ---
+        for user in users:
+            if user.user_id not in clustered_user_ids:
+                route = self.inter_clustering_service.fetch_route_for_user(user=user)
+                user_layers.extend(
+                    [
+                        self.create_route_polyline(
+                            route_coords=route,
+                            route_id=f"ungrouped_{user.user_id}",
+                            color="blue",
+                        ),
+                        self.create_user_marker(user, is_origin=True, cluster_color="blue"),
+                        self.create_user_marker(user, is_origin=False, cluster_color="blue"),
+                    ]
                 )
 
         return user_layers
+
