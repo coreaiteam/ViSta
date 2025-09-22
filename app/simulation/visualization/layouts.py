@@ -113,32 +113,39 @@ def make_controls_section(prefix: str):
 # Stats Section
 # -------------------------------
 def make_stats_section(prefix: str):
+    stats_children = [
+        html.H4(
+            "Live Statistics",
+            className="text-success fw-bold mb-3",
+        ),
+        html.Div(
+            id={"type": "stats-container", "prefix": prefix},
+            children=[
+                html.Ul(
+                    [
+                        html.Li("Total Users: Loading..."),
+                        html.Li("Active Matches: Loading..."),
+                        html.Li("Clusters Formed: Loading..."),
+                    ],
+                    className="list-group list-group-flush",
+                )
+            ],
+        ),
+    ]
+    
+    # Add save button & status only for 'intra' prefix
+    if prefix == "intra":
+        stats_children.extend([
+            html.Hr(),
+            dbc.Button("Save Data", id="save-data-btn", color="primary", className="mb-2"),
+            html.Div(id="save-status")  # This will display the callback output
+        ])
+
     return dbc.Accordion(
         [
             dbc.AccordionItem(
                 [
-                    html.Div(
-                        [
-                            html.H4(
-                                "Live Statistics",
-                                className="text-success fw-bold mb-3",
-                            ),
-                            html.Div(
-                                id={"type": "stats-container", "prefix": prefix},
-                                children=[
-                                    html.Ul(
-                                        [
-                                            html.Li("Total Users: Loading..."),
-                                            html.Li("Active Matches: Loading..."),
-                                            html.Li("Clusters Formed: Loading..."),
-                                        ],
-                                        className="list-group list-group-flush",
-                                    )
-                                ],
-                            ),
-                        ],
-                        className="p-2",
-                    )
+                    html.Div(stats_children, className="p-2")
                 ],
                 title="Statistics Overview 📊",
             ),
